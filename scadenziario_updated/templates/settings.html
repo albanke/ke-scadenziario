@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KE Group — Impostazioni</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:         #141C14;
+  --surface-1:  #1A231A;
+  --surface-2:  #202B20;
+  --surface-3:  #293329;
+  --border:     rgba(255,255,255,0.13);
+  --border-hi:  rgba(255,255,255,0.24);
+  --green:      #4ECB74;
+  --green-dim:  #1E4D2E;
+  --green-glow: rgba(78,203,116,0.18);
+  --amber:      #F5A623;
+  --red:        #F05A52;
+  --red-dim:    #4A1A18;
+  --text-1:     #EEF5EE;
+  --text-2:     #A8BEA8;
+  --text-3:     #6A826A;
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  line-height: 1.5;
+}
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events:none; z-index:0;
+}
+
+.layout { display:flex; min-height:100vh; position:relative; z-index:1; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width:72px; flex-shrink:0;
+  background:var(--surface-1);
+  border-right:1px solid var(--border);
+  display:flex; flex-direction:column; align-items:center;
+  padding:24px 0; position:sticky; top:0; height:100vh;
+  gap:8px; z-index:100;
+  transition:width 0.3s cubic-bezier(0.4,0,0.2,1);
+  overflow:hidden;
+}
+.sidebar:hover { width:220px; }
+
+.sidebar-logo {
+  width:38px; height:38px;
+  background:var(--green); border-radius:10px;
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; margin-bottom:16px;
+  box-shadow:0 0 20px var(--green-glow);
+}
+.sidebar-logo svg { width:22px; height:22px; }
+
+.nav-link {
+  width:100%; display:flex; align-items:center; gap:14px;
+  padding:10px 17px; text-decoration:none; color:var(--text-3);
+  transition:all 0.2s; white-space:nowrap; position:relative;
+}
+.nav-link:hover { color:var(--text-1); background:var(--surface-3); }
+.nav-link.active { color:var(--green); background:rgba(61,186,102,0.08); }
+.nav-link.active::before {
+  content:''; position:absolute; left:0; top:0; bottom:0;
+  width:3px; background:var(--green); border-radius:0 2px 2px 0;
+}
+.nav-icon { width:18px; height:18px; flex-shrink:0; }
+.nav-label { font-size:13px; font-weight:500; opacity:0; transition:opacity 0.2s; }
+.sidebar:hover .nav-label { opacity:1; }
+.sidebar-spacer { flex:1; }
+.gmail-pill {
+  margin:0 10px; padding:8px 14px;
+  background:var(--surface-3); border:1px solid var(--border);
+  border-radius:8px; display:flex; align-items:center; gap:8px;
+  white-space:nowrap; overflow:hidden; min-width:0;
+  width:calc(100% - 20px);
+}
+.gmail-dot { width:6px; height:6px; border-radius:50%; background:var(--text-3); flex-shrink:0; }
+.gmail-dot.on { background:var(--green); box-shadow:0 0 8px var(--green); }
+.gmail-text { font-size:11px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; opacity:0; transition:opacity 0.2s; white-space:nowrap; }
+.sidebar:hover .gmail-text { opacity:1; }
+
+/* ── Main ── */
+.main { flex:1; min-width:0; display:flex; flex-direction:column; }
+
+.topbar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:20px 40px; border-bottom:1px solid var(--border);
+  background:var(--surface-1); position:sticky; top:0; z-index:50;
+  backdrop-filter:blur(10px);
+}
+.topbar-title {
+  font-family:'DM Serif Display',serif; font-size:22px;
+  color:var(--text-1); line-height:1.2;
+}
+.topbar-title em { font-style:italic; color:var(--green); }
+.topbar-sub { font-size:12px; color:var(--text-3); margin-top:2px; font-family:'DM Mono',monospace; }
+
+/* ── Content ── */
+.content { padding:40px; max-width:760px; }
+
+/* Section cards */
+.section-card {
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  border-radius:20px;
+  padding:28px;
+  margin-bottom:20px;
+  transition:border-color 0.2s;
+}
+.section-card:hover { border-color:var(--border-hi); }
+
+.section-head {
+  display:flex; align-items:flex-start; justify-content:space-between;
+  margin-bottom:22px; padding-bottom:18px;
+  border-bottom:1px solid var(--border); gap:12px; flex-wrap:wrap;
+}
+.section-title {
+  font-family:'DM Serif Display',serif; font-size:18px;
+  color:var(--text-1); display:flex; align-items:center; gap:10px;
+}
+.section-title .ico { font-size:20px; }
+.section-desc { font-size:13px; color:var(--text-3); margin-top:4px; line-height:1.6; }
+
+/* Status row */
+.status-row {
+  display:flex; align-items:center; gap:14px;
+  padding:14px 16px; background:var(--surface-3);
+  border:1px solid var(--border); border-radius:12px; margin-bottom:16px;
+}
+.status-icon { font-size:20px; flex-shrink:0; }
+.status-title { font-weight:500; color:var(--text-1); font-size:14px; }
+.status-sub   { font-size:12px; color:var(--text-3); }
+
+/* Badges */
+.badge {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 12px; border-radius:99px;
+  font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em;
+}
+.badge::before { content:''; width:5px; height:5px; border-radius:50%; }
+.badge-ok { background:rgba(61,186,102,0.1); color:var(--green); border:1px solid rgba(61,186,102,0.3); }
+.badge-ok::before { background:var(--green); box-shadow:0 0 6px var(--green); }
+.badge-err { background:rgba(232,69,60,0.1); color:var(--red); border:1px solid rgba(232,69,60,0.3); }
+.badge-err::before { background:var(--red); }
+.badge-warn { background:rgba(245,166,35,0.1); color:var(--amber); border:1px solid rgba(245,166,35,0.3); }
+.badge-warn::before { background:var(--amber); }
+
+/* Buttons */
+.btn {
+  display:inline-flex; align-items:center; gap:7px;
+  padding:9px 18px; font-family:'DM Sans',sans-serif;
+  font-size:13px; font-weight:500; cursor:pointer;
+  border:none; border-radius:8px; transition:all 0.2s;
+  text-decoration:none;
+}
+.btn-primary { background:var(--green); color:#0C1A0C; font-weight:600; }
+.btn-primary:hover { background:#4dd174; box-shadow:0 6px 16px var(--green-glow); }
+.btn-ghost { background:transparent; border:1px solid var(--border-hi); color:var(--text-2); }
+.btn-ghost:hover { background:var(--surface-3); color:var(--text-1); }
+.btn-danger { background:transparent; border:1px solid var(--red); color:var(--red); }
+.btn-danger:hover { background:var(--red); color:#fff; }
+.btn-google { background:#fff; color:#333; font-weight:500; }
+.btn-google:hover { background:#f0f0f0; }
+.btn-sm { padding:7px 14px; font-size:12px; }
+
+/* Form */
+.field { margin-bottom:18px; }
+.field label {
+  display:block; font-size:11px; font-weight:600;
+  text-transform:uppercase; letter-spacing:0.1em;
+  color:var(--text-3); margin-bottom:8px;
+}
+.field input {
+  width:100%; max-width:420px;
+  background:var(--surface-3); border:1px solid var(--border);
+  color:var(--text-1); padding:10px 13px; border-radius:8px;
+  font-family:'DM Sans',sans-serif; font-size:14px; outline:none;
+  transition:border-color 0.2s;
+}
+.field input:focus { border-color:var(--green); box-shadow:0 0 0 3px var(--green-glow); }
+.field input::placeholder { color:var(--text-3); }
+
+/* Info box */
+.info-box {
+  background:var(--surface-3); border:1px solid var(--border);
+  border-radius:10px; padding:16px;
+  font-size:13px; color:var(--text-2);
+  line-height:1.7; margin-top:14px;
+}
+.info-box strong { color:var(--text-1); }
+.info-box code {
+  font-family:'DM Mono',monospace; font-size:12px;
+  background:var(--bg); padding:2px 7px;
+  border-radius:4px; color:var(--green);
+}
+
+/* Steps */
+.steps { display:flex; flex-direction:column; gap:14px; }
+.step-item {
+  display:flex; gap:14px; align-items:flex-start;
+  padding:14px 16px; background:var(--surface-3);
+  border:1px solid var(--border); border-radius:12px;
+  transition:border-color 0.2s;
+}
+.step-item:hover { border-color:var(--border-hi); }
+.step-num {
+  width:28px; height:28px; border-radius:50%;
+  background:var(--green-dim); border:1px solid rgba(61,186,102,0.3);
+  color:var(--green); display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:700; flex-shrink:0;
+}
+.step-text { flex:1; font-size:13px; color:var(--text-2); line-height:1.7; padding-top:4px; }
+.step-text strong { color:var(--text-1); }
+
+/* Divider */
+.action-row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+
+/* Toast */
+.toast-stack { position:fixed; bottom:24px; right:24px; display:flex; flex-direction:column; gap:8px; z-index:999; }
+.toast {
+  background:var(--surface-2); border:1px solid var(--border-hi);
+  border-radius:10px; padding:12px 18px; font-size:13px; color:var(--text-1);
+  box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  display:flex; align-items:center; gap:10px;
+  animation:toastIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  border-left:3px solid var(--green); max-width:340px;
+}
+.toast.err { border-left-color:var(--red); }
+
+@keyframes toastIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+@keyframes fadeIn  { from { opacity:0; } to { opacity:1; } }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 22 22" fill="none">
+        <path d="M4 4h6v6H4zM12 4h6v6h-6zM12 12h6v6h-6zM4 12h6v6H4z" fill="#0C1A0C"/>
+        <path d="M7 4v14M4 7h14" stroke="#0C1A0C" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <a class="nav-link" href="/">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      <span class="nav-label">Dashboard</span>
+    </a>
+    <a class="nav-link active" href="/settings">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span class="nav-label">Impostazioni</span>
+    </a>
+    <div class="sidebar-spacer"></div>
+    <div class="gmail-pill">
+      <span class="gmail-dot" id="gmailDot"></span>
+      <span class="gmail-text" id="gmailText">Gmail</span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <div class="topbar-title">Impost<em>azioni</em></div>
+        <div class="topbar-sub">Configura notifiche e integrazioni</div>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- Gmail -->
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <div class="section-title"><span class="ico">📧</span> Gmail — Notifiche Automatiche</div>
+            <div class="section-desc">Collegati con Google per ricevere email di promemoria 30 e 7 giorni prima delle scadenze.</div>
+          </div>
+          <span id="gmailBadge"></span>
+        </div>
+
+        <div id="viewConnected" style="display:none">
+          <div class="status-row">
+            <span class="status-icon">✅</span>
+            <div>
+              <div class="status-title">Canale attivo</div>
+              <div class="status-sub" id="connectedEmail">–</div>
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="btn btn-ghost btn-sm" onclick="testEmail()">
+              <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              Invia email di prova
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="disconnectGmail()">Disconnetti</button>
+          </div>
+        </div>
+
+        <div id="viewDisconnected">
+          <div class="status-row">
+            <span class="status-icon">🔌</span>
+            <div>
+              <div class="status-title">Non connesso</div>
+              <div class="status-sub">Autentica con Google per abilitare i promemoria</div>
+            </div>
+          </div>
+          <a class="btn btn-google" href="/auth/google">
+            <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Accedi con Google
+          </a>
+          <div class="info-box">
+            <strong>Prima di procedere:</strong> assicurati che il file <code>client_secrets.json</code> sia nella root del server e che le credenziali OAuth siano configurate su Google Cloud Console.
+          </div>
+        </div>
+      </div>
+
+      <!-- Email -->
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <div class="section-title"><span class="ico">📬</span> Indirizzo Email Promemoria</div>
+            <div class="section-desc">L'indirizzo a cui vengono inviati i report di scadenza automatici.</div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Email destinatario</label>
+          <input type="email" id="reminderEmail" placeholder="es. fornitura@kegroup.it">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="saveEmail()">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
+          Salva email
+        </button>
+      </div>
+
+      <!-- Gemini API -->
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <div class="section-title"><span class="ico">🤖</span> KE AI Core — Gemini API</div>
+            <div class="section-desc">Il motore AI che analizza i documenti e estrae automaticamente nome, categoria e data di scadenza.</div>
+          </div>
+          <span id="apiKeyBadge"></span>
+        </div>
+        <div class="info-box">
+          <strong>Configurazione:</strong> imposta la chiave come variabile d'ambiente prima di avviare il server.<br><br>
+          <strong>Windows:</strong> <code>set GEMINI_API_KEY=AIzaSy-tuachiave</code><br>
+          <strong>Mac / Linux:</strong> <code>export GEMINI_API_KEY=AIzaSy-tuachiave</code><br><br>
+          Ottieni la tua chiave su <strong>aistudio.google.com</strong> → API Keys.
+        </div>
+      </div>
+
+      <!-- Protocollo -->
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <div class="section-title"><span class="ico">🔄</span> Protocollo di Monitoraggio</div>
+            <div class="section-desc">Come funziona il sistema di notifiche automatiche.</div>
+          </div>
+        </div>
+        <div class="steps">
+          <div class="step-item">
+            <div class="step-num">1</div>
+            <div class="step-text">Ogni giorno alle <strong>08:00</strong> il server esegue una scansione completa dell'archivio.</div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">2</div>
+            <div class="step-text">Se un documento scade tra esattamente <strong>30 giorni</strong>, viene inviata una email di promemoria anticipata.</div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">3</div>
+            <div class="step-text">Un secondo promemoria critico viene inviato quando mancano <strong>7 giorni</strong> alla scadenza.</div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">4</div>
+            <div class="step-text">Il server deve essere <strong>in esecuzione continua</strong> per garantire l'invio puntuale. Puoi usare "Email di prova" per verificare la configurazione.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+function toast(msg, err=false) {
+  const stack = document.getElementById('toastStack');
+  const el = document.createElement('div');
+  el.className = 'toast' + (err ? ' err' : '');
+  el.innerHTML = `<span>${err ? '❌' : '✅'}</span><span>${msg}</span>`;
+  stack.appendChild(el);
+  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity 0.4s'; setTimeout(()=>el.remove(),400); }, 3500);
+}
+
+async function loadSettings() {
+  try {
+    const s = await fetch('/api/settings').then(r=>r.json());
+
+    const dot = document.getElementById('gmailDot');
+    const txt = document.getElementById('gmailText');
+    const badge = document.getElementById('gmailBadge');
+
+    if (s.gmail_connected) {
+      document.getElementById('viewConnected').style.display = 'block';
+      document.getElementById('viewDisconnected').style.display = 'none';
+      document.getElementById('connectedEmail').textContent = s.user_email || 'account collegato';
+      dot.classList.add('on');
+      txt.textContent = s.user_email || 'Connesso';
+      badge.innerHTML = '<span class="badge badge-ok">Attivo</span>';
+    } else {
+      document.getElementById('viewConnected').style.display = 'none';
+      document.getElementById('viewDisconnected').style.display = 'block';
+      badge.innerHTML = '<span class="badge badge-err">Inattivo</span>';
+    }
+
+    if (s.user_email) document.getElementById('reminderEmail').value = s.user_email;
+
+    document.getElementById('apiKeyBadge').innerHTML = s.gemini_key_set
+      ? '<span class="badge badge-ok">Configurato</span>'
+      : '<span class="badge badge-warn">Non impostata</span>';
+
+    if (new URLSearchParams(location.search).get('gmail') === 'ok')
+      toast('Gmail connesso con successo!');
+  } catch(e) {
+    toast('Errore caricamento impostazioni', true);
+  }
+}
+
+async function saveEmail() {
+  const email = document.getElementById('reminderEmail').value.trim();
+  if (!email) { toast('Inserisci un indirizzo email valido', true); return; }
+  await fetch('/api/settings/email', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email}) });
+  toast('Email salvata');
+}
+
+async function testEmail() {
+  const res = await fetch('/api/test-email', { method:'POST' });
+  const data = await res.json();
+  data.ok ? toast('Email di prova inviata!') : toast('Errore invio — controlla la configurazione Gmail', true);
+}
+
+async function disconnectGmail() {
+  if (!confirm('Disconnettere Gmail? Le notifiche automatiche verranno disabilitate.')) return;
+  await fetch('/api/gmail/disconnect', { method:'POST' });
+  location.reload();
+}
+
+loadSettings();
+</script>
+</body>
+</html>
