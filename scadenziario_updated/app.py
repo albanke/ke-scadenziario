@@ -6,6 +6,8 @@ import hashlib
 import secrets
 import psycopg2
 import psycopg2.extras
+import bcrypt
+import time
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session
@@ -23,6 +25,32 @@ os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "ke-group-secret-changeme-in-production")
+app.permanent_session_lifetime = timedelta(hours=8)
+
+# ── Rate limiting ──────────────────────────────────────────────────────────────
+_login_attempts = {}  # ip -> {'count': int, 'blocked_until': float}
+MAX_ATTEMPTS = 5
+BLOCK_SECONDS = 15 * 60
+
+def check_rate_limit(ip):
+    now = time.time()
+    entry = _login_attempts.get(ip, {'count': 0, 'blocked_until': 0})
+    if entry['blocked_until'] > now:
+        remaining = int((entry['blocked_until'] - now) / 60) + 1
+        return False, remaining
+    return True, 0
+
+def record_failed(ip):
+    now = time.time()
+    entry = _login_attempts.get(ip, {'count': 0, 'blocked_until': 0})
+    entry['count'] += 1
+    if entry['count'] >= MAX_ATTEMPTS:
+        entry['blocked_until'] = now + BLOCK_SECONDS
+        entry['count'] = 0
+    _login_attempts[ip] = entry
+
+def clear_attempts(ip):
+    _login_attempts.pop(ip, None)
 
 UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
@@ -265,6 +293,14 @@ atexit.register(lambda: scheduler.shutdown())
 def before_request():
     ensure_db()
 
+@app.after_request
+def security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
+
 @app.route("/login")
 def login_page():
     if session.get("logged_in"):
@@ -273,14 +309,44 @@ def login_page():
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        return jsonify({"ok": False, "error": f"Troppi tentativi. Riprova tra {remaining} minuti."}), 429
+
     data = request.get_json()
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "")
-    if username == LOGIN_USERNAME and password == LOGIN_PASSWORD:
-        session["logged_in"] = True
-        session.permanent = True
-        return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": "Nome utente o password non corretti"}), 401
+
+    # Hash della password salvata (o confronto diretto per compatibilità)
+    stored_hash = os.environ.get("LOGIN_PASSWORD_HASH", "")
+    stored_plain = LOGIN_PASSWORD
+
+    if username != LOGIN_USERNAME:
+        # Timing attack protection
+        bcrypt.checkpw(b"dummy", b"$2b$12$invalidhashfortimingprotectio.AAAAAAAAAAAAAAAAAAAAAA")
+        record_failed(ip)
+        return jsonify({"ok": False, "error": "Credenziali non valide"}), 401
+
+    # Verifica con bcrypt hash se disponibile, altrimenti confronto diretto
+    ok = False
+    if stored_hash:
+        try:
+            ok = bcrypt.checkpw(password.encode(), stored_hash.encode())
+        except Exception:
+            ok = False
+    else:
+        ok = (password == stored_plain)
+
+    if not ok:
+        record_failed(ip)
+        return jsonify({"ok": False, "error": "Credenziali non valide"}), 401
+
+    clear_attempts(ip)
+    session["logged_in"] = True
+    session.permanent = True
+    print(f"[Login] Accesso: {username} da {ip}")
+    return jsonify({"ok": True})
 
 @app.route("/logout")
 def logout():
