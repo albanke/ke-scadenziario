@@ -73,7 +73,13 @@ def init_db():
             """)
             conn.commit()
 
-init_db()
+_db_initialized = False
+
+def ensure_db():
+    global _db_initialized
+    if not _db_initialized:
+        init_db()
+        _db_initialized = True
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 def login_required(f):
@@ -254,6 +260,10 @@ atexit.register(lambda: scheduler.shutdown())
 # ══════════════════════════════════════════════════════════════════════════════
 # ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
+
+@app.before_request
+def before_request():
+    ensure_db()
 
 @app.route("/login")
 def login_page():
