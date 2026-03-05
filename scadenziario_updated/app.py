@@ -2,9 +2,10 @@ import os
 import json
 import re
 import base64
-import sqlite3
 import hashlib
 import secrets
+import psycopg2
+import psycopg2.extras
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session
@@ -18,23 +19,13 @@ from email.mime.text import MIMEText
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
-# ── IMPORTANTE: disabilita il requisito HTTPS per OAuth su localhost ──────────
 os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "ke-group-secret-changeme-in-production")
 
-# ── Healthcheck (Render warm-up / monitor) ───────────────────────────────────
-# Importante: deve essere una GET pubblica (senza login), perché su Render
-# l'istanza free si "sveglia" alla prima richiesta HTTP dopo lo spin-down.
-@app.get("/healthz")
-def healthz():
-    return jsonify({"ok": True, "service": "ke-scadenziario", "ts": datetime.utcnow().isoformat() + "Z"}), 200
-
-# ── Config ────────────────────────────────────────────────────────────────────
 UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
-DB_PATH = "scadenziario.db"
 REMINDER_DAYS = 30
 GOOGLE_CLIENT_SECRETS = "client_secrets.json"
 SCOPES = [
@@ -43,75 +34,80 @@ SCOPES = [
     "openid",
 ]
 
-# ── Credenziali di accesso (da variabili d'ambiente in produzione) ─────────────
-# Imposta su Render: LOGIN_USERNAME e LOGIN_PASSWORD
-# Di default: admin / kegroup2024
 LOGIN_USERNAME = os.environ.get("LOGIN_USERNAME", "admin")
 LOGIN_PASSWORD = os.environ.get("LOGIN_PASSWORD", "kegroup2024")
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# ── Database ──────────────────────────────────────────────────────────────────
+# ── Database PostgreSQL ───────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    """Restituisce una connessione PostgreSQL."""
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     return conn
 
 def init_db():
-    with get_db() as db:
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS documents (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                name             TEXT NOT NULL,
-                category         TEXT,
-                expiry_date      TEXT NOT NULL,
-                note             TEXT,
-                file_path        TEXT,
-                reminder_sent_30 INTEGER DEFAULT 0,
-                reminder_sent_7  INTEGER DEFAULT 0,
-                created_at       TEXT DEFAULT (datetime('now'))
-            )
-        """)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key   TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        db.commit()
+    """Crea le tabelle se non esistono."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS documents (
+                    id               SERIAL PRIMARY KEY,
+                    name             TEXT NOT NULL,
+                    category         TEXT,
+                    expiry_date      TEXT NOT NULL,
+                    note             TEXT,
+                    file_path        TEXT,
+                    reminder_sent_30 INTEGER DEFAULT 0,
+                    reminder_sent_7  INTEGER DEFAULT 0,
+                    created_at       TEXT DEFAULT (to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'))
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+            conn.commit()
 
 init_db()
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 def login_required(f):
-    """Decoratore: protegge le route, reindirizza al login se non autenticato."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get("logged_in"):
-            # Per le API restituisce 401, per le pagine reindirizza
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Non autenticato"}), 401
             return redirect(url_for("login_page"))
         return f(*args, **kwargs)
     return decorated
 
-# ── Settings helpers ──────────────────────────────────────────────────────────
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# ── Settings helpers ──────────────────────────────────────────────────────────
 def get_setting(key, default=None):
-    with get_db() as db:
-        row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-        return row["value"] if row else default
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT value FROM settings WHERE key=%s", (key,))
+            row = cur.fetchone()
+            return row["value"] if row else default
 
 def set_setting(key, value):
-    with get_db() as db:
-        db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, value))
-        db.commit()
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO settings (key, value) VALUES (%s, %s) "
+                "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+                (key, value)
+            )
+            conn.commit()
 
 def get_google_creds():
-    """Carica le credenziali Google e rinnova automaticamente il token se scaduto."""
     token_json = get_setting("google_token")
     if not token_json:
         return None
@@ -232,21 +228,23 @@ def send_reminder_email(doc, days_left):
 def check_expirations():
     print(f"[Scheduler] Controllo scadenze -- {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     today = datetime.now().date()
-    with get_db() as db:
-        docs = db.execute("SELECT * FROM documents").fetchall()
-        for doc in docs:
-            try:
-                exp = datetime.strptime(doc["expiry_date"], "%Y-%m-%d").date()
-                days_left = (exp - today).days
-                if days_left == REMINDER_DAYS and not doc["reminder_sent_30"]:
-                    if send_reminder_email(dict(doc), days_left):
-                        db.execute("UPDATE documents SET reminder_sent_30=1 WHERE id=?", (doc["id"],))
-                if days_left == 7 and not doc["reminder_sent_7"]:
-                    if send_reminder_email(dict(doc), days_left):
-                        db.execute("UPDATE documents SET reminder_sent_7=1 WHERE id=?", (doc["id"],))
-            except Exception as e:
-                print(f"[Scheduler] Errore doc {doc['id']}: {e}")
-        db.commit()
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM documents")
+            docs = cur.fetchall()
+            for doc in docs:
+                try:
+                    exp = datetime.strptime(doc["expiry_date"], "%Y-%m-%d").date()
+                    days_left = (exp - today).days
+                    if days_left == REMINDER_DAYS and not doc["reminder_sent_30"]:
+                        if send_reminder_email(dict(doc), days_left):
+                            cur.execute("UPDATE documents SET reminder_sent_30=1 WHERE id=%s", (doc["id"],))
+                    if days_left == 7 and not doc["reminder_sent_7"]:
+                        if send_reminder_email(dict(doc), days_left):
+                            cur.execute("UPDATE documents SET reminder_sent_7=1 WHERE id=%s", (doc["id"],))
+                except Exception as e:
+                    print(f"[Scheduler] Errore doc {doc['id']}: {e}")
+            conn.commit()
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(check_expirations, "cron", hour=8, minute=0)
@@ -257,7 +255,6 @@ atexit.register(lambda: scheduler.shutdown())
 # ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Login / Logout ────────────────────────────────────────────────────────────
 @app.route("/login")
 def login_page():
     if session.get("logged_in"):
@@ -269,22 +266,17 @@ def api_login():
     data = request.get_json()
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "")
-
     if username == LOGIN_USERNAME and password == LOGIN_PASSWORD:
         session["logged_in"] = True
         session.permanent = True
-        print(f"[Login] Accesso effettuato: {username}")
         return jsonify({"ok": True})
-    else:
-        print(f"[Login] Tentativo fallito per: {username}")
-        return jsonify({"ok": False, "error": "Nome utente o password non corretti"}), 401
+    return jsonify({"ok": False, "error": "Nome utente o password non corretti"}), 401
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login_page"))
 
-# ── Pagine (protette) ─────────────────────────────────────────────────────────
 @app.route("/")
 @login_required
 def index():
@@ -295,49 +287,52 @@ def index():
 def settings_page():
     return render_template("settings.html")
 
-# ── API documenti (protette) ──────────────────────────────────────────────────
 @app.route("/api/documents", methods=["GET"])
 @login_required
 def get_documents():
-    with get_db() as db:
-        docs = db.execute("SELECT * FROM documents ORDER BY expiry_date ASC").fetchall()
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM documents ORDER BY expiry_date ASC")
+            docs = cur.fetchall()
     return jsonify([dict(d) for d in docs])
 
 @app.route("/api/documents", methods=["POST"])
 @login_required
 def add_document():
     data = request.get_json()
-    with get_db() as db:
-        cur = db.execute(
-            "INSERT INTO documents (name, category, expiry_date, note) VALUES (?,?,?,?)",
-            (data["name"], data.get("category", "Altro"), data["expiry_date"], data.get("note", "")),
-        )
-        db.commit()
-        doc = db.execute("SELECT * FROM documents WHERE id=?", (cur.lastrowid,)).fetchone()
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO documents (name, category, expiry_date, note) VALUES (%s,%s,%s,%s) RETURNING *",
+                (data["name"], data.get("category", "Altro"), data["expiry_date"], data.get("note", "")),
+            )
+            doc = cur.fetchone()
+            conn.commit()
     return jsonify(dict(doc)), 201
 
 @app.route("/api/documents/<int:doc_id>", methods=["PUT"])
 @login_required
 def update_document(doc_id):
     data = request.get_json()
-    with get_db() as db:
-        db.execute(
-            "UPDATE documents SET name=?, category=?, expiry_date=?, note=? WHERE id=?",
-            (data["name"], data.get("category"), data["expiry_date"], data.get("note", ""), doc_id),
-        )
-        db.commit()
-        doc = db.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE documents SET name=%s, category=%s, expiry_date=%s, note=%s WHERE id=%s RETURNING *",
+                (data["name"], data.get("category"), data["expiry_date"], data.get("note", ""), doc_id),
+            )
+            doc = cur.fetchone()
+            conn.commit()
     return jsonify(dict(doc))
 
 @app.route("/api/documents/<int:doc_id>", methods=["DELETE"])
 @login_required
 def delete_document(doc_id):
-    with get_db() as db:
-        db.execute("DELETE FROM documents WHERE id=?", (doc_id,))
-        db.commit()
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM documents WHERE id=%s", (doc_id,))
+            conn.commit()
     return jsonify({"ok": True})
 
-# ── Upload + AI (protetto) ────────────────────────────────────────────────────
 @app.route("/api/upload", methods=["POST"])
 @login_required
 def upload_file():
@@ -356,7 +351,6 @@ def upload_file():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ── Gmail OAuth ───────────────────────────────────────────────────────────────
 @app.route("/auth/google")
 @login_required
 def google_auth():
@@ -364,21 +358,17 @@ def google_auth():
         return (
             "<h2>File mancante: client_secrets.json</h2>"
             "<p>Scaricalo da Google Cloud Console → Credentials → OAuth 2.0 → Download JSON</p>"
-            "<p>Rinominalo <code>client_secrets.json</code> e mettilo accanto a <code>app.py</code>.</p>"
         ), 400
     flow = Flow.from_client_secrets_file(GOOGLE_CLIENT_SECRETS, scopes=SCOPES)
     flow.redirect_uri = url_for("google_callback", _external=True)
     auth_url, state = flow.authorization_url(
-        access_type="offline",
-        include_granted_scopes="true",
-        prompt="consent"
+        access_type="offline", include_granted_scopes="true", prompt="consent"
     )
     session["oauth_state"] = state
     return redirect(auth_url)
 
 @app.route("/auth/google/callback")
 def google_callback():
-    # Questo callback non richiede login (Google lo chiama direttamente)
     try:
         flow = Flow.from_client_secrets_file(
             GOOGLE_CLIENT_SECRETS, scopes=SCOPES, state=session.get("oauth_state")
@@ -390,13 +380,11 @@ def google_callback():
         service = build("oauth2", "v2", credentials=creds)
         info = service.userinfo().get().execute()
         set_setting("user_email", info.get("email", ""))
-        print(f"[Auth] Gmail connesso: {info.get('email')}")
         return redirect(url_for("settings_page") + "?gmail=ok")
     except Exception as e:
         print(f"[Auth] Errore callback OAuth: {e}")
         return redirect(url_for("settings_page") + "?gmail=error")
 
-# ── Settings API (protette) ───────────────────────────────────────────────────
 @app.route("/api/settings", methods=["GET"])
 @login_required
 def get_settings():
@@ -437,7 +425,7 @@ def test_email():
         "note": "Email di test"
     }
     ok = send_reminder_email(fake_doc, 30)
-    return jsonify({"ok": ok}) if ok else jsonify({"ok": False, "error": "Invio fallito — controlla i log"}), 500
+    return jsonify({"ok": ok}) if ok else jsonify({"ok": False, "error": "Invio fallito"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
