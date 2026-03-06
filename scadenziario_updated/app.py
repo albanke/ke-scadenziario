@@ -450,7 +450,6 @@ def upload_file():
 @login_required
 def get_settings():
     return jsonify({
-        "smtp_configured": bool(os.environ.get("SMTP_SERVER")),
         "user_email": get_setting("user_email", ""),
         "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY")),
     })
