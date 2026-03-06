@@ -8,14 +8,13 @@ import psycopg2
 import psycopg2.extras
 import bcrypt
 import time
-import smtplib
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from werkzeug.utils import secure_filename
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from apscheduler.schedulers.background import BackgroundScheduler
+import sendgrid
+from sendgrid.helpers.mail import Mail, Email, To, Content
 import atexit
 
 os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
@@ -138,41 +137,37 @@ def set_setting(key, value):
     except Exception as e:
         print(f"[DB] Errore scrittura setting {key}: {e}")
 
-# ── SMTP Email Configuration ──────────────────────────────────────────────────
+# ── SendGrid Email Configuration ──────────────────────────────────────────────
 def send_email_smtp(recipient_email: str, subject: str, body_html: str) -> bool:
-    """Invia email via SMTP (Gmail, Outlook, o qualsiasi provider SMTP)."""
+    """Invia email via SendGrid API (compatibile con Render.com)."""
     try:
-        smtp_server = os.environ.get("SMTP_SERVER", "").strip()
-        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-        smtp_user = os.environ.get("SMTP_USER", "").strip()
-        smtp_password = os.environ.get("SMTP_PASSWORD", "").strip()
-        from_email = os.environ.get("SMTP_FROM_EMAIL", smtp_user).strip()
-        
-        if not all([smtp_server, smtp_user, smtp_password, from_email]):
-            print("[Email] Credenziali SMTP incomplete")
+        api_key = os.environ.get("SENDGRID_API_KEY", "").strip()
+        from_email = os.environ.get("SENDGRID_FROM_EMAIL", "").strip()
+
+        if not api_key:
+            print("[Email] SENDGRID_API_KEY non configurata")
             return False
-        
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = from_email
-        msg["To"] = recipient_email
-        
-        # Aggiungi versione testo e HTML
-        text_part = MIMEText(body_html.replace("<br>", "\n").replace("<p>", "").replace("</p>", "\n"), "plain")
-        html_part = MIMEText(body_html, "html")
-        msg.attach(text_part)
-        msg.attach(html_part)
-        
-        # Connetti al server SMTP
-        with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
-            server.starttls()  # Sicurezza TLS
-            server.login(smtp_user, smtp_password)
-            server.send_message(msg)
-        
-        print(f"[Email] Email inviata a {recipient_email}")
-        return True
+        if not from_email:
+            print("[Email] SENDGRID_FROM_EMAIL non configurata")
+            return False
+
+        sg = sendgrid.SendGridAPIClient(api_key=api_key)
+        message = Mail(
+            from_email=Email(from_email),
+            to_emails=To(recipient_email),
+            subject=subject,
+            html_content=Content("text/html", body_html)
+        )
+        response = sg.send(message)
+
+        if response.status_code in (200, 202):
+            print(f"[Email] Email inviata a {recipient_email} (status {response.status_code})")
+            return True
+        else:
+            print(f"[Email] Errore SendGrid status {response.status_code}: {response.body}")
+            return False
     except Exception as e:
-        print(f"[Email] Errore invio: {e}")
+        print(f"[Email] Errore invio SendGrid: {e}")
         return False
 
 # ── Email reminder ────────────────────────────────────────────────────────────
@@ -423,9 +418,9 @@ def test_email():
         if not user_email:
             return jsonify({"ok": False, "error": "Nessuna email configurata"}), 400
         
-        smtp_server = os.environ.get("SMTP_SERVER", "").strip()
-        if not smtp_server:
-            return jsonify({"ok": False, "error": "SMTP non configurato"}), 400
+        api_key = os.environ.get("SENDGRID_API_KEY", "").strip()
+        if not api_key:
+            return jsonify({"ok": False, "error": "SENDGRID_API_KEY non configurata nelle variabili d'ambiente"}), 400
         
         test_doc = {
             "id": 0,
