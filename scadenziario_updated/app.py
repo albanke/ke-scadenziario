@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from werkzeug.utils import secure_filename
-import google.generativeai as genai
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -52,7 +51,6 @@ def clear_attempts(ip):
 
 UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
-REMINDER_DAYS = 30
 
 LOGIN_USERNAME = os.environ.get("LOGIN_USERNAME", "admin")
 LOGIN_PASSWORD = os.environ.get("LOGIN_PASSWORD", "kegroup2024")
@@ -117,21 +115,28 @@ def allowed_file(filename):
 
 # ── Settings helpers ──────────────────────────────────────────────────────────
 def get_setting(key, default=None):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT value FROM settings WHERE key=%s", (key,))
-            row = cur.fetchone()
-            return row["value"] if row else default
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT value FROM settings WHERE key=%s", (key,))
+                row = cur.fetchone()
+                return row["value"] if row else default
+    except Exception as e:
+        print(f"[DB] Errore lettura setting {key}: {e}")
+        return default
 
 def set_setting(key, value):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO settings (key, value) VALUES (%s, %s) "
-                "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
-                (key, value)
-            )
-            conn.commit()
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO settings (key, value) VALUES (%s, %s) "
+                    "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+                    (key, value)
+                )
+                conn.commit()
+    except Exception as e:
+        print(f"[DB] Errore scrittura setting {key}: {e}")
 
 # ── SMTP Email Configuration ──────────────────────────────────────────────────
 def send_email_smtp(recipient_email: str, subject: str, body_html: str) -> bool:
@@ -247,63 +252,6 @@ scheduler.add_job(check_expirations, "cron", hour=8, minute=0)
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
 
-# ── Gemini AI ─────────────────────────────────────────────────────────────────
-def _extract_json_object(text: str) -> dict:
-    t = (text or "").strip()
-    if t.startswith("```"):
-        t = t.strip("`")
-        t = re.sub(r"^json\s*", "", t, flags=re.I).strip()
-    try:
-        return json.loads(t)
-    except Exception:
-        pass
-    m = re.search(r"\{[\s\S]*\}", t)
-    if not m:
-        raise ValueError("Risposta AI non contiene JSON valido")
-    return json.loads(m.group(0))
-
-def extract_expiry_with_gemini(file_path: str, filename: str) -> dict:
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY non impostata.")
-
-    genai.configure(api_key=api_key)
-    ext = filename.rsplit(".", 1)[-1].lower()
-    mime_map = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-                "png": "image/png", "webp": "image/webp"}
-    mime_type = mime_map.get(ext, "application/octet-stream")
-    up = genai.upload_file(path=file_path, mime_type=mime_type)
-
-    prompt = (
-        "Analizza questo documento e rispondi SOLO con un oggetto JSON valido.\n"
-        "Estrai: nome, data scadenza (YYYY-MM-DD), categoria (Contratto/Assicurazione/"
-        "Licenza/Certificazione/Altro), nota breve (max 60 caratteri).\n"
-        "Formato: {\"name\":\"...\",\"expiry_date\":\"YYYY-MM-DD\",\"category\":\"...\",\"note\":\"...\"}\n"
-        "Se non trovi la data di scadenza usa null."
-    )
-
-    model_candidates = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash"]
-    last_err, resp = None, None
-    for mid in model_candidates:
-        for name in [mid, f"models/{mid}"]:
-            try:
-                resp = genai.GenerativeModel(name).generate_content([up, prompt])
-                break
-            except Exception as e:
-                last_err = e
-        if resp:
-            break
-
-    if resp is None:
-        raise RuntimeError(f"Nessun modello Gemini disponibile. Errore: {last_err}")
-
-    data = _extract_json_object(getattr(resp, "text", "") or "")
-    data.setdefault("name", filename)
-    data.setdefault("expiry_date", None)
-    data.setdefault("category", "Altro")
-    data.setdefault("note", "")
-    return data
-
 # ══════════════════════════════════════════════════════════════════════════════
 # ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
@@ -337,17 +285,14 @@ def api_login():
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "")
 
-    # Hash della password salvata (o confronto diretto per compatibilità)
     stored_hash = os.environ.get("LOGIN_PASSWORD_HASH", "")
     stored_plain = LOGIN_PASSWORD
 
     if username != LOGIN_USERNAME:
-        # Timing attack protection
         bcrypt.checkpw(b"dummy", b"$2b$12$invalidhashfortimingprotectio.AAAAAAAAAAAAAAAAAAAAAA")
         record_failed(ip)
         return jsonify({"ok": False, "error": "Credenziali non valide"}), 401
 
-    # Verifica con bcrypt hash se disponibile, altrimenti confronto diretto
     ok = False
     if stored_hash:
         try:
@@ -385,108 +330,128 @@ def settings_page():
 @app.route("/api/documents", methods=["GET"])
 @login_required
 def get_documents():
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM documents ORDER BY expiry_date ASC")
-            docs = cur.fetchall()
-    return jsonify([dict(d) for d in docs])
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM documents ORDER BY expiry_date ASC")
+                docs = cur.fetchall()
+        return jsonify([dict(d) for d in docs])
+    except Exception as e:
+        print(f"[API] Errore get_documents: {e}")
+        return jsonify([])
 
 @app.route("/api/documents", methods=["POST"])
 @login_required
 def add_document():
-    data = request.get_json()
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO documents (name, category, expiry_date, note) VALUES (%s,%s,%s,%s) RETURNING *",
-                (data["name"], data.get("category", "Altro"), data["expiry_date"], data.get("note", "")),
-            )
-            doc = cur.fetchone()
-            conn.commit()
-    return jsonify(dict(doc)), 201
+    try:
+        data = request.get_json()
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO documents (name, category, expiry_date, note) VALUES (%s,%s,%s,%s) RETURNING *",
+                    (data["name"], data.get("category", "Altro"), data["expiry_date"], data.get("note", "")),
+                )
+                doc = cur.fetchone()
+                conn.commit()
+        return jsonify(dict(doc)), 201
+    except Exception as e:
+        print(f"[API] Errore add_document: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/documents/<int:doc_id>", methods=["PUT"])
 @login_required
 def update_document(doc_id):
-    data = request.get_json()
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE documents SET name=%s, category=%s, expiry_date=%s, note=%s WHERE id=%s RETURNING *",
-                (data["name"], data.get("category"), data["expiry_date"], data.get("note", ""), doc_id),
-            )
-            doc = cur.fetchone()
-            conn.commit()
-    return jsonify(dict(doc))
+    try:
+        data = request.get_json()
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE documents SET name=%s, category=%s, expiry_date=%s, note=%s WHERE id=%s RETURNING *",
+                    (data["name"], data.get("category"), data["expiry_date"], data.get("note", ""), doc_id),
+                )
+                doc = cur.fetchone()
+                conn.commit()
+        return jsonify(dict(doc))
+    except Exception as e:
+        print(f"[API] Errore update_document: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/documents/<int:doc_id>", methods=["DELETE"])
 @login_required
 def delete_document(doc_id):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM documents WHERE id=%s", (doc_id,))
-            conn.commit()
-    return jsonify({"ok": True})
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM documents WHERE id=%s", (doc_id,))
+                conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"[API] Errore delete_document: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/upload", methods=["POST"])
 @login_required
 def upload_file():
-    if "file" not in request.files:
-        return jsonify({"error": "Nessun file"}), 400
-    f = request.files["file"]
-    if not f or not allowed_file(f.filename):
-        return jsonify({"error": "Formato non supportato (usa PDF, JPG, PNG, WEBP)"}), 400
-    filename = secure_filename(f.filename)
-    path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-    f.save(path)
-    try:
-        result = extract_expiry_with_gemini(path, filename)
-        result["file_path"] = path
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"error": "Upload disabilitato - usa il form manuale"}), 400
 
 @app.route("/api/settings", methods=["GET"])
 @login_required
 def get_settings():
     return jsonify({
         "user_email": get_setting("user_email", ""),
-        "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY")),
     })
 
 @app.route("/api/settings/email", methods=["POST"])
 @login_required
 def update_email():
-    data = request.get_json()
-    email = data.get("email", "").strip()
-    if not email:
-        return jsonify({"error": "Email non valida"}), 400
-    set_setting("user_email", email)
-    return jsonify({"ok": True})
+    try:
+        data = request.get_json()
+        email = data.get("email", "").strip()
+        if not email:
+            return jsonify({"error": "Email non valida"}), 400
+        set_setting("user_email", email)
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"[API] Errore update_email: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/test-email", methods=["POST"])
 @login_required
 def test_email():
-    user_email = get_setting("user_email", "")
-    if not user_email:
-        return jsonify({"ok": False, "error": "Nessuna email configurata"}), 400
-    
-    smtp_server = os.environ.get("SMTP_SERVER", "").strip()
-    if not smtp_server:
-        return jsonify({"ok": False, "error": "SMTP non configurato"}), 400
-    
-    test_doc = {
-        "name": "Documento di prova KE Group",
-        "expiry_date": (datetime.now().date() + timedelta(days=30)).isoformat(),
-        "category": "Test",
-        "note": "Email di test"
-    }
-    
-    ok = send_reminder_email(test_doc, 30)
-    if ok:
-        return jsonify({"ok": True}), 200
-    else:
-        return jsonify({"ok": False, "error": "Errore nell'invio dell'email"}), 500
+    try:
+        user_email = get_setting("user_email", "")
+        if not user_email:
+            return jsonify({"ok": False, "error": "Nessuna email configurata"}), 400
+        
+        smtp_server = os.environ.get("SMTP_SERVER", "").strip()
+        if not smtp_server:
+            return jsonify({"ok": False, "error": "SMTP non configurato"}), 400
+        
+        test_doc = {
+            "id": 0,
+            "name": "Documento di prova KE Group",
+            "expiry_date": (datetime.now().date() + timedelta(days=30)).isoformat(),
+            "category": "Test",
+            "note": "Email di test"
+        }
+        
+        ok = send_reminder_email(test_doc, 30)
+        if ok:
+            return jsonify({"ok": True}), 200
+        else:
+            return jsonify({"ok": False, "error": "Errore nell'invio dell'email"}), 500
+    except Exception as e:
+        print(f"[API] Errore test_email: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Non trovato"}), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    print(f"[ERROR] 500: {e}")
+    return jsonify({"error": "Errore interno del server"}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=False, port=int(os.environ.get("PORT", 5000)))
