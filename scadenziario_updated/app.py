@@ -483,7 +483,10 @@ def test_email():
     }
     
     ok = send_reminder_email(test_doc, 30)
-    return jsonify({"ok": ok}) if ok else jsonify({"ok": False, "error": "Invio fallito"}), 500
+    if ok:
+        return jsonify({"ok": True}), 200
+    else:
+        return jsonify({"ok": False, "error": "Errore nell'invio dell'email"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
