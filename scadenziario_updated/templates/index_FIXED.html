@@ -808,13 +808,14 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')['modalAdd',
 function toast(msg,err){var stack=document.getElementById('toastStack');var el=document.createElement('div');el.className='toast'+(err?' err':'');el.innerHTML='<span>'+(err?'❌':'✅')+'</span><span>'+msg+'</span>';stack.appendChild(el);setTimeout(function(){el.style.opacity='0';el.style.transition='opacity .4s';setTimeout(function(){el.remove();},400);},3500);}
 
 // ════════════════════════════════════════════════════════════════════════════
-// INIT: Carica documenti e notifiche al boot
+// INIT: Chiedi permessi notifiche (senza caricare documenti subito)
 // ════════════════════════════════════════════════════════════════════════════
 window.addEventListener('load', function() {
-  loadDocs();
+  // Solo chiedi permessi, non caricare documenti per evitare errore 500
   if(typeof window.electronAPI==='undefined'&&'Notification' in window&&Notification.permission==='default'){
     Notification.requestPermission();
   }
+  // loadDocs sarà chiamato quando l'utente clicca un pulsante o naviga
 });
 </script>
 </body>
