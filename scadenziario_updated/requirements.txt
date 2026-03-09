@@ -1,88 +1,9 @@
-# KE Scadenziario v2 — Setup Electron
-
-## Struttura file aggiornata
-```
-ke-scadenziario/
-├── electron/
-│   ├── main.js        ← Electron main process (notifiche + badge)
-│   ├── preload.js     ← Bridge sicuro renderer ↔ main
-│   └── icon.png       ← Icona app (aggiungila tu, 512x512 PNG)
-├── templates/
-│   ├── index.html     ← Dashboard aggiornata (nuove funzionalità)
-│   ├── login.html     ← Invariato
-│   └── settings.html  ← Invariato
-├── app.py             ← Backend Flask (invariato)
-├── package.json       ← Config Electron
-└── requirements.txt   ← Dipendenze Python
-```
-
-## Installazione e avvio
-
-### 1. Installa Node.js e dipendenze Electron
-```bash
-npm install
-```
-
-### 2. Aggiungi l'icona
-Metti un file `electron/icon.png` (512×512 px, PNG) con il logo KE.
-
-### 3. Avvia in sviluppo
-```bash
-npm start
-```
-Electron avvierà Flask automaticamente e aprirà la finestra.
-
-### 4. Variabili d'ambiente
-Crea un file `.env` oppure imposta le variabili prima di avviare:
-```
-DATABASE_URL=postgresql://...
-LOGIN_USERNAME=admin
-LOGIN_PASSWORD=tuapassword
-SENDGRID_API_KEY=...   (opzionale, per le email)
-```
-
-### 5. Build eseguibile
-```bash
-npm run build:win    # Windows .exe
-npm run build:mac    # macOS .dmg
-npm run build:linux  # Linux AppImage
-```
-
----
-
-## Nuove funzionalità v2
-
-### 🔔 Notifiche desktop
-- Appare all'avvio se ci sono scadenze critiche
-- Si ripete ogni ora automaticamente
-- Clicca l'indicatore verde in sidebar per testare
-
-### 🔢 Badge numerico sull'icona
-- Mostra il conteggio di **scaduti + critici (≤7gg)**
-- Si aggiorna in tempo reale
-- Su macOS: badge sul Dock  
-- Su Windows: overlay sulla taskbar + titolo finestra
-
-### 📅 Calendario visivo
-- Naviga mese per mese
-- Punto colorato per ogni scadenza (verde/arancio/rosso)
-- Tooltip al passaggio del mouse con dettagli
-
-### 📊 Esportazione CSV
-- Pulsante "Esporta CSV" nella topbar
-- Include: ID, Nome, Categoria, Scadenza, Stato, Giorni, Priorità, Tag, Note
-
-### 🔄 Rinnovo rapido
-- Icona ↻ su ogni riga della tabella
-- Scelte rapide: 1 mese, 3 mesi, 6 mesi, 1 anno, 2 anni
-- Oppure inserisci manualmente la nuova data
-
-### 🏷️ Tag personalizzati
-- Aggiungi tag liberi al documento (premi Invio)
-- Ricercabili dal campo di ricerca principale
-
-### ⚡ Priorità
-- 3 livelli: Alta 🔴, Media 🟡, Bassa ⚪
-- Indicatore visivo in tabella e card
-- Filtro dedicato nella barra controlli
-- Ordine automatico: Alta prima
+flask>=3.0.0
+gunicorn>=21.2.0
+google-generativeai>=0.7.0
+apscheduler>=3.10.4
+werkzeug>=3.0.0
+requests>=2.31.0
+psycopg2-binary
+bcrypt
+sendgrid>=6.9.0
