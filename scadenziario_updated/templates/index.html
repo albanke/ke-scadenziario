@@ -27,11 +27,8 @@
   --text-3:     #6A826A;
   --accent:     #4ECB74;
 }
-
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-
 html { scroll-behavior: smooth; }
-
 body {
   background: var(--bg);
   color: var(--text-1);
@@ -41,8 +38,6 @@ body {
   line-height: 1.5;
   overflow-x: hidden;
 }
-
-/* ── Noise texture overlay ── */
 body::before {
   content: '';
   position: fixed;
@@ -51,278 +46,190 @@ body::before {
   pointer-events: none;
   z-index: 0;
 }
-
 .layout { display: flex; min-height: 100vh; position: relative; z-index: 1; }
 
-/* ═══════════════════════════════════════
-   SIDEBAR
-═══════════════════════════════════════ */
+/* ── Sidebar ── */
 .sidebar {
-  width: 72px;
-  flex-shrink: 0;
+  width: 72px; flex-shrink: 0;
   background: var(--surface-1);
   border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 24px 0;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  gap: 8px;
-  z-index: 100;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 24px 0; position: sticky; top: 0; height: 100vh;
+  gap: 8px; z-index: 100;
   transition: width 0.3s cubic-bezier(0.4,0,0.2,1);
   overflow: hidden;
 }
-
-.sidebar:hover {
-  width: 220px;
-}
-
+.sidebar:hover { width: 220px; }
 .sidebar-logo {
-  width: 38px;
-  height: 38px;
-  background: var(--green);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-bottom: 16px;
+  width: 38px; height: 38px; background: var(--green); border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-bottom: 16px;
   box-shadow: 0 0 20px var(--green-glow);
 }
-
 .sidebar-logo svg { width: 22px; height: 22px; }
-
 .nav-link {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 17px;
-  text-decoration: none;
-  color: var(--text-3);
-  border-radius: 0;
-  transition: all 0.2s;
-  white-space: nowrap;
-  position: relative;
+  width: 100%; display: flex; align-items: center; gap: 14px;
+  padding: 10px 17px; text-decoration: none; color: var(--text-3);
+  transition: all 0.2s; white-space: nowrap; position: relative;
 }
-
 .nav-link:hover { color: var(--text-1); background: var(--surface-3); }
 .nav-link.active { color: var(--green); background: rgba(61,186,102,0.08); }
 .nav-link.active::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--green);
-  border-radius: 0 2px 2px 0;
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--green); border-radius: 0 2px 2px 0;
 }
-
 .nav-icon { width: 18px; height: 18px; flex-shrink: 0; }
 .nav-label { font-size: 13px; font-weight: 500; opacity: 0; transition: opacity 0.2s; }
 .sidebar:hover .nav-label { opacity: 1; }
-
 .sidebar-spacer { flex: 1; }
 
-.gmail-pill {
-  margin: 0 10px;
-  padding: 8px 14px;
-  background: var(--surface-3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  min-width: 0;
+/* Badge notifiche nella sidebar */
+.notif-badge {
+  position: absolute;
+  top: 6px; right: 6px;
+  min-width: 16px; height: 16px;
+  background: var(--red);
+  color: white;
+  font-size: 10px; font-weight: 700;
+  border-radius: 99px;
+  display: none;
+  align-items: center; justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+  box-shadow: 0 0 8px rgba(240,90,82,0.5);
+}
+.notif-badge.show { display: flex; }
+
+.notif-pill {
+  margin: 0 10px; padding: 8px 14px;
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: 8px; display: flex; align-items: center; gap: 8px;
+  white-space: nowrap; overflow: hidden; min-width: 0;
   width: calc(100% - 20px);
+  cursor: pointer;
+  transition: all 0.2s;
 }
+.notif-pill:hover { border-color: var(--green); }
+.notif-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
+.notif-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s ease infinite; }
+.notif-dot.crit { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s ease infinite; }
+.notif-text { font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.2s; white-space: nowrap; }
+.sidebar:hover .notif-text { opacity: 1; }
 
-.gmail-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
-.gmail-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
-.gmail-text { font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.2s; white-space: nowrap; }
-.sidebar:hover .gmail-text { opacity: 1; }
+/* ── Main ── */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-/* ═══════════════════════════════════════
-   MAIN
-═══════════════════════════════════════ */
-.main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Top bar */
 .topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 40px;
-  border-bottom: 1px solid var(--border-hi);
-  background: var(--surface-1);
-  position: sticky;
-  top: 0;
-  z-index: 50;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 40px; border-bottom: 1px solid var(--border-hi);
+  background: var(--surface-1); position: sticky; top: 0; z-index: 50;
   backdrop-filter: blur(10px);
 }
-
 .topbar-left { display: flex; flex-direction: column; }
-
-.topbar-title {
-  font-family: 'DM Serif Display', serif;
-  font-size: 22px;
-  color: var(--text-1);
-  line-height: 1.2;
-}
+.topbar-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--text-1); line-height: 1.2; }
 .topbar-title em { font-style: italic; color: var(--green); }
 .topbar-date { font-size: 12px; color: var(--text-3); margin-top: 2px; font-family: 'DM Mono', monospace; }
-
 .topbar-actions { display: flex; gap: 10px; align-items: center; }
 
-/* Buttons */
 .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 18px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-  border-radius: 8px;
-  transition: all 0.2s;
-  white-space: nowrap;
-  text-decoration: none;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 18px; font-family: 'DM Sans', sans-serif;
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  border: none; border-radius: 8px; transition: all 0.2s;
+  white-space: nowrap; text-decoration: none;
 }
-.btn-ghost {
-  background: transparent;
-  border: 1px solid var(--border-hi);
-  color: var(--text-2);
-}
+.btn-ghost { background: transparent; border: 1px solid var(--border-hi); color: var(--text-2); }
 .btn-ghost:hover { background: var(--surface-3); color: var(--text-1); border-color: var(--border-hi); }
-
-.btn-primary {
-  background: var(--green);
-  color: #0C1A0C;
-  font-weight: 600;
-}
+.btn-primary { background: var(--green); color: #0C1A0C; font-weight: 600; }
 .btn-primary:hover { background: #4dd174; transform: translateY(-1px); box-shadow: 0 8px 20px var(--green-glow); }
-
 .btn-sm { padding: 7px 14px; font-size: 12px; }
 .btn-danger { background: transparent; border: 1px solid var(--red); color: var(--red); }
 .btn-danger:hover { background: var(--red); color: white; }
 
-/* ═══════════════════════════════════════
-   CONTENT AREA
-═══════════════════════════════════════ */
 .content { padding: 32px 40px; flex: 1; }
 
 /* ── Stats Grid ── */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 28px;
-}
-
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
 .stat-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border-hi);
-  border-radius: 16px;
-  padding: 20px 22px;
-  position: relative;
-  overflow: hidden;
+  background: var(--surface-2); border: 1px solid var(--border-hi);
+  border-radius: 16px; padding: 20px 22px;
+  position: relative; overflow: hidden;
   transition: transform 0.2s, border-color 0.2s;
+  cursor: pointer;
 }
 .stat-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.32); }
-
 .stat-card::after {
-  content: '';
-  position: absolute;
-  top: 0; right: 0;
-  width: 80px; height: 80px;
-  border-radius: 50%;
-  opacity: 0.07;
-  transform: translate(20px, -20px);
+  content: ''; position: absolute; top: 0; right: 0;
+  width: 80px; height: 80px; border-radius: 50%;
+  opacity: 0.07; transform: translate(20px, -20px);
 }
 .stat-card.all::after  { background: var(--text-1); }
 .stat-card.ok::after   { background: var(--green); }
 .stat-card.warn::after { background: var(--amber); }
 .stat-card.crit::after { background: var(--red); }
-
-.stat-number {
-  font-family: 'DM Serif Display', serif;
-  font-size: 42px;
-  line-height: 1;
-  margin-bottom: 6px;
-}
+.stat-number { font-family: 'DM Serif Display', serif; font-size: 42px; line-height: 1; margin-bottom: 6px; }
 .stat-card.ok   .stat-number { color: var(--green); }
 .stat-card.warn .stat-number { color: var(--amber); }
 .stat-card.crit .stat-number { color: var(--red); }
 .stat-card.all  .stat-number { color: var(--text-1); }
-
-.stat-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-2);
-}
+.stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-2); }
 .stat-sublabel { font-size: 11px; color: var(--text-2); margin-top: 8px; }
 
-/* ── Timeline mini ── */
+/* ── Timeline bar ── */
 .timeline-bar {
-  background: var(--surface-2);
-  border: 1px solid var(--border-hi);
-  border-radius: 16px;
-  padding: 20px 24px;
-  margin-bottom: 28px;
+  background: var(--surface-2); border: 1px solid var(--border-hi);
+  border-radius: 16px; padding: 20px 24px; margin-bottom: 28px;
 }
-.timeline-bar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
+.timeline-bar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .timeline-bar-title { font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.08em; }
-
-.progress-segments {
-  display: flex;
-  height: 8px;
-  gap: 3px;
-  border-radius: 99px;
-  overflow: hidden;
-}
+.progress-segments { display: flex; height: 8px; gap: 3px; border-radius: 99px; overflow: hidden; }
 .seg { border-radius: 99px; transition: width 0.8s ease; }
 .seg.ok   { background: var(--green); }
 .seg.warn { background: var(--amber); }
 .seg.crit { background: var(--red); }
 .seg.empty { background: var(--surface-3); flex: 1; }
-
-.timeline-legend {
-  display: flex;
-  gap: 20px;
-  margin-top: 12px;
-}
+.timeline-legend { display: flex; gap: 20px; margin-top: 12px; }
 .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
+/* ── Note rapide ── */
+.notes-strip {
+  display: flex; gap: 10px; margin-bottom: 20px;
+  overflow-x: auto; padding-bottom: 4px;
+}
+.notes-strip::-webkit-scrollbar { height: 4px; }
+.notes-strip::-webkit-scrollbar-track { background: transparent; }
+.notes-strip::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+.quick-note {
+  flex-shrink: 0; min-width: 160px; max-width: 220px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+  position: relative; transition: all 0.2s;
+  animation: cardIn 0.3s ease both;
+}
+.quick-note:hover { border-color: var(--border-hi); }
+.quick-note.pinned { border-color: rgba(78,203,116,0.4); }
+.note-content { font-size: 12px; color: var(--text-2); line-height: 1.5; word-break: break-word; }
+.note-actions { display: flex; gap: 4px; margin-top: 8px; justify-content: flex-end; }
+.note-btn { background: none; border: none; cursor: pointer; color: var(--text-3); padding: 2px 4px; border-radius: 4px; font-size: 11px; transition: all 0.15s; }
+.note-btn:hover { color: var(--text-1); background: var(--surface-3); }
+.note-add {
+  flex-shrink: 0; min-width: 130px;
+  border: 1.5px dashed var(--border-hi);
+  border-radius: 12px; padding: 12px 14px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer; color: var(--text-3); font-size: 12px;
+  transition: all 0.2s; background: none;
+}
+.note-add:hover { border-color: var(--green); color: var(--green); background: var(--green-glow); }
+
 /* ── Alerts ── */
 .alerts-area { margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px; }
-
 .alert-banner {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
-  border-radius: 12px;
-  font-size: 13px;
-  animation: slideDown 0.3s ease;
-  border: 1px solid;
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px; border-radius: 12px; font-size: 13px;
+  animation: slideDown 0.3s ease; border: 1px solid;
 }
 .alert-banner.crit { background: rgba(232,69,60,0.08); border-color: rgba(232,69,60,0.3); }
 .alert-banner.warn { background: rgba(245,166,35,0.08); border-color: rgba(245,166,35,0.3); }
@@ -331,110 +238,65 @@ body::before {
 .alert-text span { color: var(--text-2); }
 
 /* ── Controls ── */
-.controls-bar {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.search-box {
-  flex: 1;
-  min-width: 220px;
-  position: relative;
-}
+.controls-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.search-box { flex: 1; min-width: 220px; position: relative; }
 .search-box input {
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--border-hi);
-  color: var(--text-1);
-  padding: 10px 14px 10px 38px;
-  border-radius: 8px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.2s;
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border-hi);
+  color: var(--text-1); padding: 10px 14px 10px 38px;
+  border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px;
+  outline: none; transition: border-color 0.2s;
 }
 .search-box input:focus { border-color: var(--green); }
 .search-box input::placeholder { color: var(--text-2); }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-2); pointer-events: none; }
-
 .filter-select {
-  background: var(--surface-2);
-  border: 1px solid var(--border-hi);
-  color: var(--text-1);
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.2s;
+  background: var(--surface-2); border: 1px solid var(--border-hi);
+  color: var(--text-1); padding: 10px 14px; border-radius: 8px;
+  font-family: 'DM Sans', sans-serif; font-size: 13px;
+  outline: none; cursor: pointer; transition: border-color 0.2s;
 }
 .filter-select:focus { border-color: var(--green); color: var(--text-1); }
 .filter-select option { background: var(--surface-2); }
-
-/* Toggle view buttons */
 .view-toggle { display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px; }
 .view-btn { padding: 5px 10px; border-radius: 5px; border: none; background: none; color: var(--text-3); cursor: pointer; transition: all 0.15s; }
 .view-btn.active { background: var(--surface-3); color: var(--text-1); }
 
-/* ── Table ── */
-.table-wrap {
-  background: var(--surface-2);
-  border: 1px solid var(--border-hi);
-  border-radius: 16px;
-  overflow: hidden;
+/* Archive toggle */
+.archive-toggle {
+  display: flex; align-items: center; gap: 6px; padding: 9px 14px;
+  background: var(--surface-2); border: 1px solid var(--border-hi);
+  border-radius: 8px; cursor: pointer; color: var(--text-2); font-size: 12px;
+  transition: all 0.2s;
 }
+.archive-toggle:hover { color: var(--text-1); border-color: var(--border-hi); }
+.archive-toggle.active { color: var(--amber); border-color: rgba(245,166,35,0.4); background: rgba(245,166,35,0.06); }
 
+/* ── Table ── */
+.table-wrap { background: var(--surface-2); border: 1px solid var(--border-hi); border-radius: 16px; overflow: hidden; }
 table { width: 100%; border-collapse: collapse; }
 thead { background: var(--surface-3); }
-th {
-  text-align: left;
-  padding: 12px 18px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-2);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
+th { text-align: left; padding: 12px 18px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-2); cursor: pointer; user-select: none; white-space: nowrap; }
 th:hover { color: var(--text-1); }
 th .sort-icon { opacity: 0.5; margin-left: 4px; }
 th.sorted .sort-icon { opacity: 1; color: var(--green); }
-
 tbody tr { border-top: 1px solid var(--border-hi); transition: background 0.15s; }
 tbody tr:hover { background: rgba(61,186,102,0.04); }
 td { padding: 14px 18px; font-size: 13px; vertical-align: middle; }
-
 .doc-name { font-weight: 500; color: var(--text-1); }
 .doc-note { font-size: 12px; color: var(--text-3); margin-top: 2px; font-family: 'DM Mono', monospace; }
 
-.cat-badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 500;
-  background: var(--surface-3);
-  color: var(--text-2);
-  border: 1px solid var(--border-hi);
-}
+.cat-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-hi); }
+
+/* Priority badge */
+.prio-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-left: 6px; }
+.prio-alta   { background: rgba(240,90,82,0.15); color: var(--red); }
+.prio-media  { background: rgba(245,166,35,0.15); color: var(--amber); }
+.prio-bassa  { background: rgba(78,203,116,0.1); color: var(--green); }
 
 .status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 99px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 99px; font-size: 11px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
 }
 .status-pill::before { content:''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 .status-pill.ok   { background: rgba(61,186,102,0.1);  color: var(--green); }
@@ -444,244 +306,74 @@ td { padding: 14px 18px; font-size: 13px; vertical-align: middle; }
 .status-pill.crit { background: rgba(232,69,60,0.1);   color: var(--red); }
 .status-pill.crit::before { background: var(--red); }
 
-/* Days countdown chip */
-.days-chip {
-  font-family: 'DM Mono', monospace;
-  font-size: 12px;
-  color: var(--text-3);
-}
-
+.days-chip { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-3); }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
-.icon-btn {
-  width: 30px; height: 30px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-3);
-  transition: all 0.15s;
-}
+.icon-btn { width: 30px; height: 30px; background: none; border: 1px solid var(--border); border-radius: 7px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-3); transition: all 0.15s; }
 .icon-btn:hover { background: var(--surface-3); color: var(--text-1); border-color: var(--border-hi); }
 .icon-btn.del:hover { border-color: var(--red); color: var(--red); background: var(--red-dim); }
+.icon-btn.arch:hover { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
 
-.empty-state {
-  text-align: center;
-  padding: 80px 40px;
-  color: var(--text-3);
-}
+.empty-state { text-align: center; padding: 80px 40px; color: var(--text-3); }
 .empty-state .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
 .empty-state p { font-size: 14px; line-height: 1.7; }
 
-/* ── Card view ── */
-.cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 14px;
-}
-
-.doc-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 20px;
-  transition: all 0.2s;
-  animation: cardIn 0.3s ease both;
-}
+/* ── Cards ── */
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.doc-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 20px; transition: all 0.2s; animation: cardIn 0.3s ease both; }
 .doc-card:hover { transform: translateY(-3px); border-color: var(--border-hi); box-shadow: 0 12px 32px rgba(0,0,0,0.3); }
 .doc-card.crit { border-left: 3px solid var(--red); }
 .doc-card.warn { border-left: 3px solid var(--amber); }
 .doc-card.ok   { border-left: 3px solid var(--green); }
-
 .card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; gap: 10px; }
 .card-title { font-weight: 600; color: var(--text-1); font-size: 14px; line-height: 1.3; }
 .card-body { font-size: 12px; color: var(--text-3); margin-bottom: 14px; font-family: 'DM Mono', monospace; line-height: 1.6; }
 .card-footer { display: flex; align-items: center; justify-content: space-between; }
 .card-date { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-2); }
 
-/* ═══════════════════════════════════════
-   MODAL
-═══════════════════════════════════════ */
-.backdrop {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.7);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 300;
-  padding: 20px;
-  animation: fadeIn 0.2s;
-}
-
-.modal {
-  background: var(--surface-2);
-  border: 1px solid var(--border-hi);
-  border-radius: 20px;
-  padding: 32px;
-  width: 100%;
-  max-width: 520px;
-  max-height: 90vh;
-  overflow-y: auto;
-  animation: scaleIn 0.25s cubic-bezier(0.34,1.56,0.64,1);
-  box-shadow: 0 40px 80px rgba(0,0,0,0.5);
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 28px;
-}
-.modal-title {
-  font-family: 'DM Serif Display', serif;
-  font-size: 22px;
-  color: var(--text-1);
-}
-.modal-close {
-  width: 32px; height: 32px;
-  background: var(--surface-3);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-2);
-  font-size: 18px;
-  transition: all 0.15s;
-}
+/* ── Modal ── */
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 300; padding: 20px; animation: fadeIn 0.2s; }
+.modal { background: var(--surface-2); border: 1px solid var(--border-hi); border-radius: 20px; padding: 32px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; animation: scaleIn 0.25s cubic-bezier(0.34,1.56,0.64,1); box-shadow: 0 40px 80px rgba(0,0,0,0.5); }
+.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+.modal-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--text-1); }
+.modal-close { width: 32px; height: 32px; background: var(--surface-3); border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-2); font-size: 18px; transition: all 0.15s; }
 .modal-close:hover { background: var(--surface-1); color: var(--text-1); }
-
-/* Modal tabs */
 .mtabs { display: flex; gap: 4px; margin-bottom: 24px; background: var(--surface-3); border-radius: 10px; padding: 4px; }
-.mtab {
-  flex: 1; text-align: center;
-  padding: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: 7px;
-  color: var(--text-3);
-  transition: all 0.15s;
-  border: none;
-  background: none;
-  font-family: 'DM Sans', sans-serif;
-}
+.mtab { flex: 1; text-align: center; padding: 8px; font-size: 13px; font-weight: 500; cursor: pointer; border-radius: 7px; color: var(--text-3); transition: all 0.15s; border: none; background: none; font-family: 'DM Sans', sans-serif; }
 .mtab.active { background: var(--surface-2); color: var(--text-1); box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
-
-/* Form elements */
 .field { margin-bottom: 18px; }
-.field label {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-3);
-  margin-bottom: 8px;
-}
-.field input,
-.field select,
-.field textarea {
-  width: 100%;
-  background: var(--surface-3);
-  border: 1px solid var(--border);
-  color: var(--text-1);
-  padding: 10px 13px;
-  border-radius: 8px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.field input:focus,
-.field select:focus,
-.field textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); }
+.field label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); margin-bottom: 8px; }
+.field input, .field select, .field textarea { width: 100%; background: var(--surface-3); border: 1px solid var(--border); color: var(--text-1); padding: 10px 13px; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 14px; outline: none; transition: border-color 0.2s; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); }
 .field input::placeholder, .field textarea::placeholder { color: var(--text-3); }
 .field select option { background: var(--surface-2); }
 .field textarea { resize: vertical; min-height: 80px; }
-
 .fields-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-
-/* Drop zone */
-.dropzone {
-  border: 1.5px dashed var(--border-hi);
-  border-radius: 12px;
-  padding: 36px 20px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
-  background: var(--surface-3);
-  margin-bottom: 18px;
-}
+.dropzone { border: 1.5px dashed var(--border-hi); border-radius: 12px; padding: 36px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--surface-3); margin-bottom: 18px; }
 .dropzone:hover, .dropzone.over { border-color: var(--green); background: var(--green-glow); }
 .dropzone-icon { font-size: 32px; margin-bottom: 10px; }
 .dropzone strong { color: var(--text-1); display: block; margin-bottom: 4px; }
 .dropzone p { font-size: 12px; color: var(--text-3); }
 .dropzone input { display: none; }
-
-.ai-bar {
-  display: none;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  background: rgba(61,186,102,0.06);
-  border: 1px solid rgba(61,186,102,0.2);
-  border-radius: 8px;
-  margin-bottom: 16px;
-  font-size: 13px;
-  color: var(--green);
-}
-.spinner-ring {
-  width: 16px; height: 16px;
-  border: 2px solid rgba(61,186,102,0.3);
-  border-top-color: var(--green);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  flex-shrink: 0;
-}
-
-.ai-success {
-  display: none;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: rgba(61,186,102,0.08);
-  border: 1px solid rgba(61,186,102,0.2);
-  border-radius: 8px;
-  margin-bottom: 16px;
-  font-size: 13px;
-  color: var(--green);
-}
-
 .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
 
-/* ── TOAST ── */
+/* ── Toast ── */
 .toast-stack { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 999; }
-.toast {
-  background: var(--surface-2);
-  border: 1px solid var(--border-hi);
-  border-radius: 10px;
-  padding: 12px 18px;
-  font-size: 13px;
-  color: var(--text-1);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  animation: toastIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
-  border-left: 3px solid var(--green);
-  max-width: 340px;
-}
+.toast { background: var(--surface-2); border: 1px solid var(--border-hi); border-radius: 10px; padding: 12px 18px; font-size: 13px; color: var(--text-1); box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: flex; align-items: center; gap: 10px; animation: toastIn 0.3s cubic-bezier(0.34,1.56,0.64,1); border-left: 3px solid var(--green); max-width: 340px; }
 .toast.err { border-left-color: var(--red); }
+.toast.warn { border-left-color: var(--amber); }
 
-/* ── SEARCH HIGHLIGHT ── */
+/* ── Desktop notification banner ── */
+.notif-request-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 18px; margin-bottom: 16px;
+  background: rgba(78,203,116,0.07); border: 1px solid rgba(78,203,116,0.25);
+  border-radius: 12px; font-size: 13px; animation: slideDown 0.3s ease;
+}
+.notif-request-bar strong { color: var(--green); }
+.notif-request-bar .nr-close { margin-left: auto; background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 16px; }
+
 mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2px; padding: 0 1px; }
 
-/* ═══════════════════════════════════════
-   ANIMATIONS
-═══════════════════════════════════════ */
 @keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideDown{ from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform: none; } }
 @keyframes scaleIn  { from { opacity:0; transform: scale(0.92); } to { opacity:1; transform: scale(1); } }
@@ -711,9 +403,10 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
       </svg>
     </div>
 
-    <a class="nav-link active" href="/">
+    <a class="nav-link active" href="/" style="position:relative;">
       <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
       <span class="nav-label">Dashboard</span>
+      <span class="notif-badge" id="sidebarBadge"></span>
     </a>
     <a class="nav-link" href="/settings">
       <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -722,23 +415,30 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
 
     <div class="sidebar-spacer"></div>
 
-    <div class="gmail-pill">
-      <span class="gmail-dot" id="gmailDot"></span>
-      <span class="gmail-text" id="gmailText">Gmail</span>
+    <div class="notif-pill" onclick="requestNotificationPermission()">
+      <span class="notif-dot" id="notifDot"></span>
+      <span class="notif-text" id="notifText">Notifiche</span>
     </div>
+
+    <a href="/logout" class="nav-link" style="margin-top:8px">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      <span class="nav-label">Esci</span>
+    </a>
   </aside>
 
   <!-- ── MAIN ── -->
   <div class="main">
-
-    <!-- Top bar -->
     <header class="topbar">
       <div class="topbar-left">
         <div class="topbar-title">Registro <em>Scadenze</em></div>
         <div class="topbar-date" id="todayDate"></div>
       </div>
       <div class="topbar-actions">
-        <button class="btn btn-ghost" onclick="openUpload()">
+        <button class="btn btn-ghost" onclick="exportCSV()" title="Esporta CSV">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+          Esporta
+        </button>
+        <button class="btn btn-ghost" onclick="openManual()">
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
           Carica
         </button>
@@ -749,8 +449,15 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
       </div>
     </header>
 
-    <!-- Content -->
     <div class="content">
+
+      <!-- Richiesta permesso notifiche (solo browser, non Electron) -->
+      <div id="notifRequestBar" class="notif-request-bar" style="display:none">
+        <span>🔔</span>
+        <span><strong>Abilita le notifiche desktop</strong> per ricevere avvisi sulle scadenze anche quando il browser è in background.</span>
+        <button class="btn btn-sm btn-primary" onclick="requestNotificationPermission()" style="flex-shrink:0">Abilita</button>
+        <button class="nr-close" onclick="document.getElementById('notifRequestBar').style.display='none'">✕</button>
+      </div>
 
       <!-- Stats -->
       <div class="stats-grid" id="statsGrid"></div>
@@ -765,9 +472,12 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
         <div class="timeline-legend">
           <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Validi</div>
           <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>In scadenza (&le;30gg)</div>
-          <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Scaduti</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Scaduti/Critici</div>
         </div>
       </div>
+
+      <!-- Note rapide -->
+      <div id="notesStrip" class="notes-strip"></div>
 
       <!-- Alerts -->
       <div class="alerts-area" id="alertsArea"></div>
@@ -787,8 +497,12 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
           <option value="">Tutti gli stati</option>
           <option value="ok">Validi</option>
           <option value="warn">In scadenza</option>
-          <option value="crit">Scaduti</option>
+          <option value="crit">Critici/Scaduti</option>
         </select>
+        <button class="archive-toggle" id="archiveToggle" onclick="toggleArchive()">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+          Archivio
+        </button>
         <div class="view-toggle">
           <button class="view-btn active" id="btnTable" onclick="setView('table')" title="Vista tabella">
             <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 10h18M3 14h18M10 4v16M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/></svg>
@@ -819,41 +533,17 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
       <!-- Cards -->
       <div class="cards-grid" id="cardsGrid" style="display:none"></div>
 
-    </div><!-- /content -->
-  </div><!-- /main -->
+    </div>
+  </div>
 </div>
 
-<!-- ═══ MODAL: Upload / Manual ═══ -->
+<!-- ═══ MODAL: Add / Edit ═══ -->
 <div class="backdrop" id="modalAdd" style="display:none" onclick="bkdrop(event,'modalAdd')">
   <div class="modal">
     <div class="modal-header">
       <div class="modal-title" id="modalAddTitle">Nuovo documento</div>
       <button class="modal-close" onclick="closeModal('modalAdd')">✕</button>
     </div>
-
-    <div class="mtabs" id="addTabs">
-      <button class="mtab active" onclick="switchAddTab('upload')">📎 Carica file</button>
-      <button class="mtab" onclick="switchAddTab('manual')">✏️ Manuale</button>
-    </div>
-
-    <div id="uploadSection">
-      <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()"
-           ondragover="dzOver(event)" ondragleave="dzLeave(event)" ondrop="dzDrop(event)">
-        <div class="dropzone-icon">📄</div>
-        <strong>Trascina qui il documento</strong>
-        <p>PDF · JPG · PNG · WEBP · oppure clicca per scegliere</p>
-        <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="onFileChange(this.files[0])">
-      </div>
-      <div class="ai-bar" id="aiBar">
-        <div class="spinner-ring"></div>
-        <span>KE AI sta analizzando il documento…</span>
-      </div>
-      <div class="ai-success" id="aiSuccess">
-        <span>✅</span>
-        <span>Dati estratti automaticamente — verifica e salva.</span>
-      </div>
-    </div>
-
     <div class="field">
       <label>Nome documento *</label>
       <input type="text" id="fName" placeholder="es. Contratto affitto Torino">
@@ -872,10 +562,18 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
       </div>
     </div>
     <div class="field">
+      <label>Priorità</label>
+      <select id="fPrio">
+        <option value="normale">Normale</option>
+        <option value="alta">Alta 🔴</option>
+        <option value="media">Media 🟡</option>
+        <option value="bassa">Bassa 🟢</option>
+      </select>
+    </div>
+    <div class="field">
       <label>Note</label>
       <textarea id="fNote" placeholder="Riferimenti, dettagli utili…"></textarea>
     </div>
-
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modalAdd')">Annulla</button>
       <button class="btn btn-primary" onclick="saveDoc()">Salva documento</button>
@@ -902,6 +600,15 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
       </div>
       <div class="field"><label>Data scadenza *</label><input type="date" id="eDate"></div>
     </div>
+    <div class="field">
+      <label>Priorità</label>
+      <select id="ePrio">
+        <option value="normale">Normale</option>
+        <option value="alta">Alta 🔴</option>
+        <option value="media">Media 🟡</option>
+        <option value="bassa">Bassa 🟢</option>
+      </select>
+    </div>
     <div class="field"><label>Note</label><textarea id="eNote"></textarea></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modalEdit')">Annulla</button>
@@ -910,7 +617,7 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
   </div>
 </div>
 
-<!-- ═══ MODAL: Delete confirm ═══ -->
+<!-- ═══ MODAL: Delete ═══ -->
 <div class="backdrop" id="modalDel" style="display:none" onclick="bkdrop(event,'modalDel')">
   <div class="modal" style="max-width:380px">
     <div class="modal-header">
@@ -928,16 +635,39 @@ mark { background: rgba(61,186,102,0.25); color: var(--text-1); border-radius: 2
   </div>
 </div>
 
-<!-- Toast stack -->
+<!-- ═══ MODAL: Nota rapida ═══ -->
+<div class="backdrop" id="modalNote" style="display:none" onclick="bkdrop(event,'modalNote')">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title">Nota rapida</div>
+      <button class="modal-close" onclick="closeModal('modalNote')">✕</button>
+    </div>
+    <div class="field">
+      <label>Testo nota</label>
+      <textarea id="noteContent" placeholder="Scrivi una nota veloce…" style="min-height:100px"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalNote')">Annulla</button>
+      <button class="btn btn-primary" onclick="saveNote()">Aggiungi nota</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast-stack" id="toastStack"></div>
 
 <script>
 // ══ State ══
 let allDocs = [];
+let allNotes = [];
 let currentView = 'table';
 let sortField = 'expiry_date';
 let sortDir = 1;
 let deleteTarget = null;
+let showArchived = false;
+let notifPermission = Notification.permission;
+
+// ══ Electron bridge ══
+const isElectron = !!window.electronKE;
 
 // ══ Init ══
 document.getElementById('todayDate').textContent =
@@ -946,12 +676,141 @@ document.getElementById('todayDate').textContent =
 ['searchInput','filterCat','filterStatus'].forEach(id =>
   document.getElementById(id).addEventListener('input', render));
 
-loadSettings();
+// Inizializza notifiche
+initNotifications();
 loadDocs();
+loadNotes();
+
+// Aggiorna badge ogni 2 minuti (browser fallback)
+if (!isElectron) {
+  setInterval(pollBadge, 120_000);
+  pollBadge();
+}
+
+// Electron: ascolta badge update dal main process
+if (isElectron) {
+  window.electronKE.onBadgeUpdate(updateBadgeUI);
+  window.electronKE.onFocusDocument(docId => {
+    const row = document.querySelector(`[data-doc-id="${docId}"]`);
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+// ══ Notifiche ══
+function initNotifications() {
+  if (isElectron) {
+    // Electron gestisce le notifiche dal main process
+    updateNotifIndicator('electron');
+    return;
+  }
+  // Browser: controlla permesso
+  if (notifPermission === 'granted') {
+    updateNotifIndicator('granted');
+  } else if (notifPermission === 'default') {
+    // Mostra banner dopo 2 sec
+    setTimeout(() => {
+      document.getElementById('notifRequestBar').style.display = 'flex';
+    }, 2000);
+    updateNotifIndicator('default');
+  } else {
+    updateNotifIndicator('denied');
+  }
+}
+
+async function requestNotificationPermission() {
+  if (isElectron) {
+    toast('✅ Notifiche attive via app desktop');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  notifPermission = perm;
+  document.getElementById('notifRequestBar').style.display = 'none';
+  if (perm === 'granted') {
+    updateNotifIndicator('granted');
+    toast('Notifiche desktop abilitate!');
+    // Subito un poll
+    await pollBadge();
+    showPendingNotifications();
+  } else {
+    updateNotifIndicator('denied');
+    toast('Notifiche non abilitate', true);
+  }
+}
+
+function updateNotifIndicator(state) {
+  const dot = document.getElementById('notifDot');
+  const txt = document.getElementById('notifText');
+  dot.className = 'notif-dot';
+  if (state === 'granted' || state === 'electron') {
+    dot.classList.add('on');
+    txt.textContent = isElectron ? 'Notifiche attive' : 'Notifiche ON';
+  } else if (state === 'default') {
+    txt.textContent = 'Clicca per abilitare';
+  } else {
+    txt.textContent = 'Notifiche OFF';
+  }
+}
+
+async function pollBadge() {
+  try {
+    const res = await fetch('/api/notifications/count');
+    const data = await res.json();
+    updateBadgeUI(data.count || 0);
+    if (notifPermission === 'granted' && !isElectron) {
+      showPendingNotifications();
+    }
+  } catch(e) {}
+}
+
+async function showPendingNotifications() {
+  if (notifPermission !== 'granted' && !isElectron) return;
+  try {
+    const res = await fetch('/api/notifications/pending');
+    const data = await res.json();
+    const notifs = data.notifications || [];
+    for (const n of notifs) {
+      sendBrowserNotification(n);
+    }
+    if (notifs.length > 0) {
+      // Marca come inviate
+      await fetch('/api/notifications/mark-sent', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ids: notifs.map(n => ({id: n.id, type: n.type})) })
+      });
+    }
+  } catch(e) {}
+}
+
+function sendBrowserNotification(notif) {
+  if (notifPermission !== 'granted') return;
+  const urgency = notif.days < 0 ? '🚨' : notif.days <= 7 ? '⚠️' : '📅';
+  const daysText = notif.days < 0 ? `Scaduto ${Math.abs(notif.days)}gg fa` : notif.days === 0 ? 'Scade oggi!' : `Scade tra ${notif.days}gg`;
+  const n = new Notification(`${urgency} ${notif.name}`, {
+    body: `${daysText} — ${notif.category || 'Altro'}`,
+    tag: `ke-doc-${notif.id}`,
+    requireInteraction: notif.days <= 7
+  });
+  n.onclick = () => { window.focus(); };
+}
+
+function updateBadgeUI(count) {
+  const badge = document.getElementById('sidebarBadge');
+  if (count > 0) {
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.classList.add('show');
+    const dot = document.getElementById('notifDot');
+    dot.className = 'notif-dot crit';
+    document.getElementById('notifText').textContent = `${count} critici`;
+  } else {
+    badge.classList.remove('show');
+    if (notifPermission === 'granted' || isElectron) updateNotifIndicator('granted');
+  }
+}
 
 // ══ Data ══
 async function loadDocs() {
-  const res = await fetch('/api/documents');
+  const res = await fetch(`/api/documents?archived=${showArchived ? 1 : 0}`);
   allDocs = await res.json();
   renderStats();
   renderTimeline();
@@ -959,17 +818,11 @@ async function loadDocs() {
   render();
 }
 
-async function loadSettings() {
+async function loadNotes() {
   try {
-    const s = await fetch('/api/settings').then(r=>r.json());
-    const dot = document.getElementById('gmailDot');
-    const txt = document.getElementById('gmailText');
-    if (s.gmail_connected) {
-      dot.classList.add('on');
-      txt.textContent = s.user_email || 'Connesso';
-    } else {
-      txt.textContent = 'Gmail';
-    }
+    const res = await fetch('/api/notes');
+    allNotes = await res.json();
+    renderNotes();
   } catch(e) {}
 }
 
@@ -978,52 +831,49 @@ function getStatus(dateStr) {
   const today = new Date(); today.setHours(0,0,0,0);
   const exp = new Date(dateStr);
   const diff = Math.round((exp - today) / 86400000);
-  if (diff < 0)  return { cls:'crit', label:'Scaduto',      sub: `${Math.abs(diff)}gg fa`, days:diff };
-  if (diff <= 7) return { cls:'crit', label:'Critico',       sub: `tra ${diff}gg`, days:diff };
-  if (diff <= 30) return { cls:'warn', label:'In scadenza',  sub: `tra ${diff}gg`, days:diff };
+  if (diff < 0)  return { cls:'crit', label:'Scaduto',     sub: `${Math.abs(diff)}gg fa`, days:diff };
+  if (diff <= 7) return { cls:'crit', label:'Critico',      sub: `tra ${diff}gg`, days:diff };
+  if (diff <= 30) return { cls:'warn', label:'In scadenza', sub: `tra ${diff}gg`, days:diff };
   return { cls:'ok', label:'Valido', sub: `${diff}gg rimasti`, days:diff };
 }
 
-function fmtDate(d) {
-  const [y,m,day] = d.split('-');
-  return `${day}/${m}/${y}`;
-}
-
+function fmtDate(d) { const [y,m,day] = d.split('-'); return `${day}/${m}/${y}`; }
 function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
 function highlight(text, q) {
   if (!q) return esc(text);
   const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')', 'gi');
   return esc(text).replace(re, '<mark>$1</mark>');
 }
 
+function prioBadge(p) {
+  if (!p || p === 'normale') return '';
+  const map = { alta: 'prio-alta', media: 'prio-media', bassa: 'prio-bassa' };
+  const lbl = { alta: 'Alta', media: 'Media', bassa: 'Bassa' };
+  return `<span class="prio-badge ${map[p]}">${lbl[p]||p}</span>`;
+}
+
 // ══ Stats ══
 function renderStats() {
   const c = {ok:0, warn:0, crit:0};
   allDocs.forEach(d => { const s = getStatus(d.expiry_date); c[s.cls]++; });
-
-  // Prossima scadenza
-  const upcoming = allDocs
-    .filter(d => getStatus(d.expiry_date).days >= 0)
-    .sort((a,b) => getStatus(a.expiry_date).days - getStatus(b.expiry_date).days)[0];
-
+  const upcoming = allDocs.filter(d => getStatus(d.expiry_date).days >= 0).sort((a,b) => getStatus(a.expiry_date).days - getStatus(b.expiry_date).days)[0];
   document.getElementById('statsGrid').innerHTML = `
-    <div class="stat-card all">
+    <div class="stat-card all" onclick="clearFilters()">
       <div class="stat-number">${allDocs.length}</div>
       <div class="stat-label">Totale documenti</div>
       ${upcoming ? `<div class="stat-sublabel">Prossima: ${fmtDate(upcoming.expiry_date)}</div>` : ''}
     </div>
-    <div class="stat-card ok">
+    <div class="stat-card ok" onclick="filterByStatus('ok')">
       <div class="stat-number">${c.ok}</div>
       <div class="stat-label">Validi</div>
       <div class="stat-sublabel">${allDocs.length ? Math.round(c.ok/allDocs.length*100) : 0}% dell'archivio</div>
     </div>
-    <div class="stat-card warn">
+    <div class="stat-card warn" onclick="filterByStatus('warn')">
       <div class="stat-number">${c.warn}</div>
       <div class="stat-label">In scadenza</div>
       <div class="stat-sublabel">Entro 30 giorni</div>
     </div>
-    <div class="stat-card crit">
+    <div class="stat-card crit" onclick="filterByStatus('crit')">
       <div class="stat-number">${c.crit}</div>
       <div class="stat-label">Critici / Scaduti</div>
       <div class="stat-sublabel">Azione richiesta</div>
@@ -1031,7 +881,18 @@ function renderStats() {
   `;
 }
 
-// ══ Timeline bar ══
+function filterByStatus(st) {
+  document.getElementById('filterStatus').value = st;
+  render();
+}
+function clearFilters() {
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('filterCat').value = '';
+  document.getElementById('searchInput').value = '';
+  render();
+}
+
+// ══ Timeline ══
 function renderTimeline() {
   if (!allDocs.length) { document.getElementById('timelineBar').style.display = 'none'; return; }
   const c = {ok:0, warn:0, crit:0};
@@ -1046,20 +907,66 @@ function renderTimeline() {
     const s = document.createElement('div');
     s.className = `seg ${cls}`;
     s.style.width = `${Math.max(2, Math.round(n/tot*100))}%`;
-    s.title = `${cls === 'ok' ? 'Validi' : cls === 'warn' ? 'In scadenza' : 'Critici'}: ${n}`;
+    s.title = `${cls==='ok'?'Validi':cls==='warn'?'In scadenza':'Critici'}: ${n}`;
     segs.appendChild(s);
   });
-  if (c.ok + c.warn + c.crit < tot) {
-    const s = document.createElement('div');
-    s.className = 'seg empty';
-    segs.appendChild(s);
-  }
+  if (c.ok+c.warn+c.crit < tot) { const s=document.createElement('div'); s.className='seg empty'; segs.appendChild(s); }
+}
+
+// ══ Note rapide ══
+function renderNotes() {
+  const strip = document.getElementById('notesStrip');
+  let html = allNotes.map(n => `
+    <div class="quick-note ${n.pinned ? 'pinned' : ''}">
+      <div class="note-content">${esc(n.content)}</div>
+      <div class="note-actions">
+        <button class="note-btn" onclick="togglePin(${n.id}, ${n.pinned})" title="${n.pinned?'Rimuovi pin':'Fissa'}">${n.pinned?'📌':'📍'}</button>
+        <button class="note-btn" onclick="removeNote(${n.id})" title="Elimina">✕</button>
+      </div>
+    </div>
+  `).join('');
+  html += `<button class="note-add" onclick="openNoteModal()">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+    Nota rapida
+  </button>`;
+  strip.innerHTML = html;
+}
+
+function openNoteModal() {
+  document.getElementById('noteContent').value = '';
+  document.getElementById('modalNote').style.display = 'flex';
+  setTimeout(() => document.getElementById('noteContent').focus(), 50);
+}
+
+async function saveNote() {
+  const content = document.getElementById('noteContent').value.trim();
+  if (!content) { toast('Scrivi qualcosa nella nota', true); return; }
+  await fetch('/api/notes', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ content })
+  });
+  closeModal('modalNote');
+  toast('Nota aggiunta');
+  loadNotes();
+}
+
+async function removeNote(id) {
+  await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+  loadNotes();
+}
+
+async function togglePin(id, currentPinned) {
+  await fetch(`/api/notes/${id}/pin`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ pinned: !currentPinned })
+  });
+  loadNotes();
 }
 
 // ══ Alerts ══
 function renderAlerts() {
   const expired = allDocs.filter(d => getStatus(d.expiry_date).days < 0);
-  const critical = allDocs.filter(d => { const s = getStatus(d.expiry_date); return s.days >= 0 && s.days <= 7; });
+  const critical = allDocs.filter(d => { const s=getStatus(d.expiry_date); return s.days>=0 && s.days<=7; });
   let html = '';
   if (expired.length)
     html += `<div class="alert-banner crit">
@@ -1076,47 +983,48 @@ function renderAlerts() {
   document.getElementById('alertsArea').innerHTML = html;
 }
 
+// ══ Archive toggle ══
+async function toggleArchive() {
+  showArchived = !showArchived;
+  const btn = document.getElementById('archiveToggle');
+  btn.classList.toggle('active', showArchived);
+  btn.querySelector('span') && (btn.lastChild.textContent = showArchived ? 'Attivi' : 'Archivio');
+  await loadDocs();
+}
+
 // ══ Main render ══
 function render() {
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
   const cat = document.getElementById('filterCat').value;
   const st = document.getElementById('filterStatus').value;
-
   let docs = allDocs.filter(d => {
     const s = getStatus(d.expiry_date);
     return (!q || d.name.toLowerCase().includes(q) || (d.note||'').toLowerCase().includes(q) || (d.category||'').toLowerCase().includes(q))
       && (!cat || d.category === cat)
       && (!st || s.cls === st);
   });
-
-  // Sort
   docs.sort((a,b) => {
-    const priorityScore = d => {
-      const s = getStatus(d.expiry_date);
-      return s.cls === 'crit' ? 0 : s.cls === 'warn' ? 1 : 2;
-    };
+    const priorityScore = d => { const s=getStatus(d.expiry_date); return s.cls==='crit'?0:s.cls==='warn'?1:2; };
     let diff = 0;
-    if (sortField === 'name') diff = a.name.localeCompare(b.name);
-    else if (sortField === 'expiry_date') diff = priorityScore(a) - priorityScore(b) || new Date(a.expiry_date) - new Date(b.expiry_date);
+    if (sortField==='name') diff = a.name.localeCompare(b.name);
+    else if (sortField==='expiry_date') diff = priorityScore(a)-priorityScore(b) || new Date(a.expiry_date)-new Date(b.expiry_date);
     return diff * sortDir;
   });
-
-  if (currentView === 'table') renderTable(docs, q);
+  if (currentView==='table') renderTable(docs, q);
   else renderCards(docs, q);
 }
 
 function sortBy(field) {
-  if (sortField === field) sortDir *= -1;
-  else { sortField = field; sortDir = 1; }
+  if (sortField===field) sortDir*=-1; else { sortField=field; sortDir=1; }
   render();
 }
 
 function setView(v) {
-  currentView = v;
-  document.getElementById('tableWrap').style.display = v === 'table' ? 'block' : 'none';
-  document.getElementById('cardsGrid').style.display  = v === 'cards' ? 'grid'  : 'none';
-  document.getElementById('btnTable').classList.toggle('active', v === 'table');
-  document.getElementById('btnCards').classList.toggle('active', v === 'cards');
+  currentView=v;
+  document.getElementById('tableWrap').style.display = v==='table'?'block':'none';
+  document.getElementById('cardsGrid').style.display  = v==='cards'?'grid':'none';
+  document.getElementById('btnTable').classList.toggle('active', v==='table');
+  document.getElementById('btnCards').classList.toggle('active', v==='cards');
   render();
 }
 
@@ -1125,28 +1033,30 @@ function renderTable(docs, q) {
   const tb = document.getElementById('tableBody');
   if (!docs.length) {
     tb.innerHTML = `<tr><td colspan="6"><div class="empty-state">
-      <div class="empty-icon">📂</div>
-      <p>Nessun documento trovato.<br>
-      ${allDocs.length ? 'Prova a cambiare i filtri.' : 'Clicca <strong>Nuovo documento</strong> per iniziare.'}</p>
+      <div class="empty-icon">${showArchived?'📦':'📂'}</div>
+      <p>${allDocs.length?'Nessun documento trovato. Prova a cambiare i filtri.':showArchived?'Archivio vuoto.':'Clicca <strong>Nuovo documento</strong> per iniziare.'}</p>
     </div></td></tr>`;
     return;
   }
-  tb.innerHTML = docs.map((d, i) => {
+  tb.innerHTML = docs.map((d,i) => {
     const s = getStatus(d.expiry_date);
-    const daysLabel = s.days < 0 ? `−${Math.abs(s.days)}gg` : `${s.days}gg`;
-    return `<tr style="animation:rowIn .25s ease ${i*.03}s both">
+    const daysLabel = s.days<0?`−${Math.abs(s.days)}gg`:`${s.days}gg`;
+    return `<tr style="animation:rowIn .25s ease ${i*.03}s both" data-doc-id="${d.id}">
       <td>
-        <div class="doc-name">${highlight(d.name, q)}</div>
-        ${d.note ? `<div class="doc-note">${highlight(d.note.substring(0,60), q)}${d.note.length>60?'…':''}</div>` : ''}
+        <div class="doc-name">${highlight(d.name,q)}${prioBadge(d.priority)}</div>
+        ${d.note?`<div class="doc-note">${highlight(d.note.substring(0,60),q)}${d.note.length>60?'…':''}</div>`:''}
       </td>
       <td><span class="cat-badge">${esc(d.category||'Altro')}</span></td>
       <td style="font-family:'DM Mono',monospace;font-size:12px">${fmtDate(d.expiry_date)}</td>
       <td><span class="status-pill ${s.cls}">${s.label}</span></td>
-      <td><span class="days-chip ${s.cls === 'crit' ? 'style="color:var(--red)"' : s.cls === 'warn' ? 'style="color:var(--amber)"' : ''}">${daysLabel}</span></td>
+      <td><span class="days-chip" style="${s.cls==='crit'?'color:var(--red)':s.cls==='warn'?'color:var(--amber)':''}">${daysLabel}</span></td>
       <td>
         <div class="row-actions">
           <button class="icon-btn" onclick="openEdit(${d.id})" title="Modifica">
             <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          </button>
+          <button class="icon-btn arch" onclick="archiveDoc(${d.id},${showArchived?0:1})" title="${showArchived?'Ripristina':'Archivia'}">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="${showArchived?'17 12 12 17 7 12':'17 12 12 7 7 12'}"/></svg>
           </button>
           <button class="icon-btn del" onclick="askDelete(${d.id})" title="Elimina">
             <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -1161,30 +1071,28 @@ function renderTable(docs, q) {
 function renderCards(docs, q) {
   const grid = document.getElementById('cardsGrid');
   if (!docs.length) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
-      <div class="empty-icon">📂</div>
-      <p>Nessun documento trovato.</p>
-    </div>`;
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">📂</div><p>Nessun documento trovato.</p></div>`;
     return;
   }
-  grid.innerHTML = docs.map((d, i) => {
+  grid.innerHTML = docs.map((d,i) => {
     const s = getStatus(d.expiry_date);
-    return `<div class="doc-card ${s.cls}" style="animation-delay:${i*.04}s">
+    return `<div class="doc-card ${s.cls}" style="animation-delay:${i*.04}s" data-doc-id="${d.id}">
       <div class="card-header">
-        <div class="card-title">${highlight(d.name, q)}</div>
+        <div>
+          <div class="card-title">${highlight(d.name,q)}</div>
+          ${d.priority&&d.priority!=='normale'?prioBadge(d.priority):''}
+        </div>
         <span class="status-pill ${s.cls}">${s.label}</span>
       </div>
-      ${d.note ? `<div class="card-body">${esc(d.note.substring(0,80))}${d.note.length>80?'…':''}</div>` : ''}
+      ${d.note?`<div class="card-body">${esc(d.note.substring(0,80))}${d.note.length>80?'…':''}</div>`:''}
       <div class="card-footer">
-        <div>
-          <span class="cat-badge">${esc(d.category||'Altro')}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
+        <span class="cat-badge">${esc(d.category||'Altro')}</span>
+        <div style="display:flex;align-items:center;gap:6px">
           <span class="card-date">${fmtDate(d.expiry_date)}</span>
-          <button class="icon-btn btn-sm" onclick="openEdit(${d.id})" style="width:26px;height:26px">
+          <button class="icon-btn" onclick="openEdit(${d.id})" style="width:26px;height:26px">
             <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
           </button>
-          <button class="icon-btn del btn-sm" onclick="askDelete(${d.id})" style="width:26px;height:26px">
+          <button class="icon-btn del" onclick="askDelete(${d.id})" style="width:26px;height:26px">
             <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
           </button>
         </div>
@@ -1200,7 +1108,7 @@ async function saveDoc() {
   if (!name || !date) { toast('Nome e data sono obbligatori', true); return; }
   await fetch('/api/documents', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ name, category: document.getElementById('fCat').value, expiry_date: date, note: document.getElementById('fNote').value.trim() })
+    body: JSON.stringify({ name, category: document.getElementById('fCat').value, expiry_date: date, note: document.getElementById('fNote').value.trim(), priority: document.getElementById('fPrio').value })
   });
   closeModal('modalAdd');
   toast('Documento salvato');
@@ -1212,9 +1120,10 @@ function openEdit(id) {
   if (!d) return;
   document.getElementById('editId').value = id;
   document.getElementById('eName').value = d.name;
-  document.getElementById('eCat').value = d.category || 'Altro';
+  document.getElementById('eCat').value = d.category||'Altro';
   document.getElementById('eDate').value = d.expiry_date;
-  document.getElementById('eNote').value = d.note || '';
+  document.getElementById('eNote').value = d.note||'';
+  document.getElementById('ePrio').value = d.priority||'normale';
   document.getElementById('modalEdit').style.display = 'flex';
 }
 
@@ -1225,7 +1134,7 @@ async function updateDoc() {
   if (!name || !date) { toast('Nome e data sono obbligatori', true); return; }
   await fetch(`/api/documents/${id}`, {
     method:'PUT', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ name, category: document.getElementById('eCat').value, expiry_date: date, note: document.getElementById('eNote').value.trim() })
+    body: JSON.stringify({ name, category: document.getElementById('eCat').value, expiry_date: date, note: document.getElementById('eNote').value.trim(), priority: document.getElementById('ePrio').value })
   });
   closeModal('modalEdit');
   toast('Documento aggiornato');
@@ -1248,77 +1157,43 @@ async function confirmDelete() {
   loadDocs();
 }
 
-// ══ Upload + AI ══
-async function onFileChange(file) {
-  if (!file) return;
-  document.getElementById('aiBar').style.display = 'flex';
-  document.getElementById('aiSuccess').style.display = 'none';
-  const fd = new FormData();
-  fd.append('file', file);
-  try {
-    const res = await fetch('/api/upload', { method:'POST', body: fd });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    document.getElementById('fName').value = data.name || '';
-    document.getElementById('fCat').value = data.category || 'Altro';
-    document.getElementById('fDate').value = data.expiry_date || '';
-    document.getElementById('fNote').value = data.note || '';
-    document.getElementById('aiSuccess').style.display = 'flex';
-  } catch(e) {
-    toast('Errore analisi: ' + e.message, true);
-  } finally {
-    document.getElementById('aiBar').style.display = 'none';
-  }
+async function archiveDoc(id, archived) {
+  await fetch(`/api/documents/${id}/archive`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ archived: !!archived })
+  });
+  toast(archived ? 'Documento archiviato' : 'Documento ripristinato');
+  loadDocs();
 }
 
-function dzOver(e) { e.preventDefault(); document.getElementById('dropzone').classList.add('over'); }
-function dzLeave(e) { document.getElementById('dropzone').classList.remove('over'); }
-function dzDrop(e) { e.preventDefault(); dzLeave(); onFileChange(e.dataTransfer.files[0]); }
+// ══ Export CSV ══
+function exportCSV() {
+  window.location.href = '/api/export/csv';
+  toast('Download CSV avviato');
+}
 
 // ══ Modals ══
-function openUpload() {
-  resetForm();
-  document.getElementById('uploadSection').style.display = 'block';
-  document.getElementById('addTabs').style.display = 'flex';
-  document.getElementById('modalAddTitle').textContent = 'Carica documento';
-  document.getElementById('modalAdd').style.display = 'flex';
-}
-
 function openManual() {
-  resetForm();
-  document.getElementById('uploadSection').style.display = 'none';
-  document.getElementById('addTabs').style.display = 'none';
-  document.getElementById('modalAddTitle').textContent = 'Nuovo documento';
-  document.getElementById('modalAdd').style.display = 'flex';
-}
-
-function switchAddTab(t) {
-  const btns = document.querySelectorAll('.mtab');
-  btns[0].classList.toggle('active', t==='upload');
-  btns[1].classList.toggle('active', t==='manual');
-  document.getElementById('uploadSection').style.display = t==='upload' ? 'block' : 'none';
-}
-
-function resetForm() {
   ['fName','fDate','fNote'].forEach(id => document.getElementById(id).value='');
   document.getElementById('fCat').value = 'Contratto';
-  document.getElementById('aiBar').style.display = 'none';
-  document.getElementById('aiSuccess').style.display = 'none';
-  document.getElementById('dropzone').classList.remove('over');
+  document.getElementById('fPrio').value = 'normale';
+  document.getElementById('modalAddTitle').textContent = 'Nuovo documento';
+  document.getElementById('modalAdd').style.display = 'flex';
+  setTimeout(() => document.getElementById('fName').focus(), 50);
 }
 
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-function bkdrop(e, id) { if (e.target.id === id) closeModal(id); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') ['modalAdd','modalEdit','modalDel'].forEach(closeModal); });
+function bkdrop(e, id) { if (e.target.id===id) closeModal(id); }
+document.addEventListener('keydown', e => { if (e.key==='Escape') ['modalAdd','modalEdit','modalDel','modalNote'].forEach(closeModal); });
 
 // ══ Toast ══
-function toast(msg, err=false) {
+function toast(msg, err=false, warn=false) {
   const stack = document.getElementById('toastStack');
   const el = document.createElement('div');
-  el.className = 'toast' + (err ? ' err' : '');
-  el.innerHTML = `<span>${err ? '❌' : '✅'}</span><span>${msg}</span>`;
+  el.className = 'toast' + (err?' err':warn?' warn':'');
+  el.innerHTML = `<span>${err?'❌':warn?'⚠️':'✅'}</span><span>${msg}</span>`;
   stack.appendChild(el);
-  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity 0.4s'; setTimeout(()=>el.remove(), 400); }, 3000);
+  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity 0.4s'; setTimeout(()=>el.remove(),400); }, 3000);
 }
 </script>
 </body>
