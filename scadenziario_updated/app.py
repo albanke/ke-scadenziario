@@ -1,494 +1,452 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KE Group — Impostazioni</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-:root {
-  --bg:         #141C14;
-  --surface-1:  #1A231A;
-  --surface-2:  #202B20;
-  --surface-3:  #293329;
-  --border:     rgba(255,255,255,0.13);
-  --border-hi:  rgba(255,255,255,0.24);
-  --green:      #4ECB74;
-  --green-dim:  #1E4D2E;
-  --green-glow: rgba(78,203,116,0.18);
-  --amber:      #F5A623;
-  --red:        #F05A52;
-  --red-dim:    #4A1A18;
-  --text-1:     #EEF5EE;
-  --text-2:     #A8BEA8;
-  --text-3:     #6A826A;
-}
+import os
+import json
+import re
+import base64
+import hashlib
+import secrets
+import psycopg2
+import psycopg2.extras
+import bcrypt
+import time
+from datetime import datetime, timedelta
+from functools import wraps
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session
+from werkzeug.utils import secure_filename
+from apscheduler.schedulers.background import BackgroundScheduler
+import sendgrid
+from sendgrid.helpers.mail import Mail, Email, To, Content
+import atexit
 
-*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-body {
-  background: var(--bg);
-  color: var(--text-1);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px;
-  min-height: 100vh;
-  line-height: 1.5;
-}
-body::before {
-  content:'';
-  position:fixed; inset:0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
-  pointer-events:none; z-index:0;
-}
+os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
-.layout { display:flex; min-height:100vh; position:relative; z-index:1; }
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET", "ke-group-secret-changeme-in-production")
+app.permanent_session_lifetime = timedelta(hours=8)
 
-/* ── Sidebar ── */
-.sidebar {
-  width:72px; flex-shrink:0;
-  background:var(--surface-1);
-  border-right:1px solid var(--border);
-  display:flex; flex-direction:column; align-items:center;
-  padding:24px 0; position:sticky; top:0; height:100vh;
-  gap:8px; z-index:100;
-  transition:width 0.3s cubic-bezier(0.4,0,0.2,1);
-  overflow:hidden;
-}
-.sidebar:hover { width:220px; }
+# ── Rate limiting ──────────────────────────────────────────────────────────────
+_login_attempts = {}  # ip -> {'count': int, 'blocked_until': float}
+MAX_ATTEMPTS = 5
+BLOCK_SECONDS = 15 * 60
 
-.sidebar-logo {
-  width:38px; height:38px;
-  background:var(--green); border-radius:10px;
-  display:flex; align-items:center; justify-content:center;
-  flex-shrink:0; margin-bottom:16px;
-  box-shadow:0 0 20px var(--green-glow);
-}
-.sidebar-logo svg { width:22px; height:22px; }
+def check_rate_limit(ip):
+    now = time.time()
+    entry = _login_attempts.get(ip, {'count': 0, 'blocked_until': 0})
+    if entry['blocked_until'] > now:
+        remaining = int((entry['blocked_until'] - now) / 60) + 1
+        return False, remaining
+    return True, 0
 
-.nav-link {
-  width:100%; display:flex; align-items:center; gap:14px;
-  padding:10px 17px; text-decoration:none; color:var(--text-3);
-  transition:all 0.2s; white-space:nowrap; position:relative;
-}
-.nav-link:hover { color:var(--text-1); background:var(--surface-3); }
-.nav-link.active { color:var(--green); background:rgba(61,186,102,0.08); }
-.nav-link.active::before {
-  content:''; position:absolute; left:0; top:0; bottom:0;
-  width:3px; background:var(--green); border-radius:0 2px 2px 0;
-}
-.nav-icon { width:18px; height:18px; flex-shrink:0; }
-.nav-label { font-size:13px; font-weight:500; opacity:0; transition:opacity 0.2s; }
-.sidebar:hover .nav-label { opacity:1; }
-.sidebar-spacer { flex:1; }
-.status-pill {
-  margin:0 10px; padding:8px 14px;
-  background:var(--surface-3); border:1px solid var(--border);
-  border-radius:8px; display:flex; align-items:center; gap:8px;
-  white-space:nowrap; overflow:hidden; min-width:0;
-  width:calc(100% - 20px);
-}
-.status-dot { width:6px; height:6px; border-radius:50%; background:var(--text-3); flex-shrink:0; }
-.status-dot.on { background:var(--green); box-shadow:0 0 8px var(--green); }
-.status-text { font-size:11px; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; opacity:0; transition:opacity 0.2s; white-space:nowrap; }
-.sidebar:hover .status-text { opacity:1; }
+def record_failed(ip):
+    now = time.time()
+    entry = _login_attempts.get(ip, {'count': 0, 'blocked_until': 0})
+    entry['count'] += 1
+    if entry['count'] >= MAX_ATTEMPTS:
+        entry['blocked_until'] = now + BLOCK_SECONDS
+        entry['count'] = 0
+    _login_attempts[ip] = entry
 
-/* ── Main ── */
-.main { flex:1; min-width:0; display:flex; flex-direction:column; }
+def clear_attempts(ip):
+    _login_attempts.pop(ip, None)
 
-.topbar {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:20px 40px; border-bottom:1px solid var(--border);
-  background:var(--surface-1); position:sticky; top:0; z-index:50;
-  backdrop-filter:blur(10px);
-}
-.topbar-title {
-  font-family:'DM Serif Display',serif; font-size:22px;
-  color:var(--text-1); line-height:1.2;
-}
-.topbar-title em { font-style:italic; color:var(--green); }
-.topbar-sub { font-size:12px; color:var(--text-3); margin-top:2px; font-family:'DM Mono',monospace; }
+UPLOAD_FOLDER = "uploads"
+ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "webp"}
 
-/* ── Content ── */
-.content { padding:40px; max-width:760px; }
+LOGIN_USERNAME = os.environ.get("LOGIN_USERNAME", "admin")
+LOGIN_PASSWORD = os.environ.get("LOGIN_PASSWORD", "kegroup2024")
 
-/* Section cards */
-.section-card {
-  background:var(--surface-2);
-  border:1px solid var(--border);
-  border-radius:20px;
-  padding:28px;
-  margin-bottom:20px;
-  transition:border-color 0.2s;
-}
-.section-card:hover { border-color:var(--border-hi); }
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-.section-head {
-  display:flex; align-items:flex-start; justify-content:space-between;
-  margin-bottom:22px; padding-bottom:18px;
-  border-bottom:1px solid var(--border); gap:12px; flex-wrap:wrap;
-}
-.section-title {
-  font-family:'DM Serif Display',serif; font-size:18px;
-  color:var(--text-1); display:flex; align-items:center; gap:10px;
-}
-.section-title .ico { font-size:20px; }
-.section-desc { font-size:13px; color:var(--text-3); margin-top:4px; line-height:1.6; }
+# ── Database PostgreSQL ───────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-/* Status row */
-.status-row {
-  display:flex; align-items:center; gap:14px;
-  padding:14px 16px; background:var(--surface-3);
-  border:1px solid var(--border); border-radius:12px; margin-bottom:16px;
-}
-.status-icon { font-size:20px; flex-shrink:0; }
-.status-title { font-weight:500; color:var(--text-1); font-size:14px; }
-.status-sub   { font-size:12px; color:var(--text-3); }
+def get_db():
+    """Restituisce una connessione PostgreSQL."""
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    return conn
 
-/* Action row */
-.action-row {
-  display:flex; gap:10px; flex-wrap:wrap;
-}
+def init_db():
+    """Crea le tabelle se non esistono."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS documents (
+                    id               SERIAL PRIMARY KEY,
+                    name             TEXT NOT NULL,
+                    category         TEXT,
+                    expiry_date      TEXT NOT NULL,
+                    note             TEXT,
+                    file_path        TEXT,
+                    reminder_sent_30 INTEGER DEFAULT 0,
+                    reminder_sent_7  INTEGER DEFAULT 0,
+                    created_at       TEXT DEFAULT (to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'))
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+            conn.commit()
 
-/* Badges */
-.badge {
-  display:inline-flex; align-items:center; gap:6px;
-  padding:4px 12px; border-radius:99px;
-  font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em;
-}
-.badge::before { content:''; width:5px; height:5px; border-radius:50%; }
-.badge-ok { background:rgba(61,186,102,0.1); color:var(--green); border:1px solid rgba(61,186,102,0.3); }
-.badge-ok::before { background:var(--green); box-shadow:0 0 6px var(--green); }
-.badge-err { background:rgba(232,69,60,0.1); color:var(--red); border:1px solid rgba(232,69,60,0.3); }
-.badge-err::before { background:var(--red); }
-.badge-warn { background:rgba(245,166,35,0.1); color:var(--amber); border:1px solid rgba(245,166,35,0.3); }
-.badge-warn::before { background:var(--amber); }
+_db_initialized = False
 
-/* Buttons */
-.btn {
-  display:inline-flex; align-items:center; gap:7px;
-  padding:9px 18px; font-family:'DM Sans',sans-serif;
-  font-size:13px; font-weight:500; cursor:pointer;
-  border:none; border-radius:8px; transition:all 0.2s;
-  text-decoration:none;
-}
-.btn-primary { background:var(--green); color:#0C1A0C; font-weight:600; }
-.btn-primary:hover { background:#4dd174; box-shadow:0 6px 16px var(--green-glow); }
-.btn-ghost { background:transparent; border:1px solid var(--border-hi); color:var(--text-2); }
-.btn-ghost:hover { background:var(--surface-3); color:var(--text-1); }
-.btn-danger { background:transparent; border:1px solid var(--red); color:var(--red); }
-.btn-danger:hover { background:var(--red); color:#fff; }
-.btn-sm { padding:7px 14px; font-size:12px; }
+def ensure_db():
+    global _db_initialized
+    if not _db_initialized:
+        init_db()
+        _db_initialized = True
 
-/* Form */
-.field { margin-bottom:18px; }
-.field label {
-  display:block; font-size:11px; font-weight:600;
-  text-transform:uppercase; letter-spacing:0.1em;
-  color:var(--text-3); margin-bottom:8px;
-}
-.field input {
-  width:100%; max-width:420px;
-  background:var(--surface-3); border:1px solid var(--border);
-  color:var(--text-1); padding:10px 13px; border-radius:8px;
-  transition:border-color 0.2s; font-family:'DM Sans',sans-serif;
-  font-size:14px;
-}
-.field input:focus {
-  outline:none; border-color:var(--green);
-  box-shadow:0 0 0 2px rgba(78,203,116,0.1);
-}
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Non autenticato"}), 401
+            return redirect(url_for("login_page"))
+        return f(*args, **kwargs)
+    return decorated
 
-/* Info box */
-.info-box {
-  background:rgba(78,203,116,0.05);
-  border:1px solid rgba(78,203,116,0.2);
-  border-radius:12px;
-  padding:14px;
-  font-size:12px;
-  line-height:1.6;
-  color:var(--text-2);
-  margin-top:16px;
-}
-.info-box code {
-  background:var(--surface-3);
-  padding:2px 6px;
-  border-radius:4px;
-  font-family:'DM Mono',monospace;
-  font-size:11px;
-  color:var(--text-1);
-}
-.info-box strong {
-  color:var(--text-1);
-}
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-/* Steps */
-.steps {
-  display:flex; flex-direction:column; gap:12px;
-}
-.step-item {
-  display:flex; gap:14px; align-items:flex-start;
-}
-.step-num {
-  width:32px; height:32px;
-  background:rgba(78,203,116,0.1);
-  border:1px solid rgba(78,203,116,0.3);
-  border-radius:50%;
-  display:flex; align-items:center; justify-content:center;
-  font-weight:600; color:var(--green); flex-shrink:0; font-size:14px;
-}
-.step-text {
-  flex:1; padding-top:4px;
-  font-size:13px; color:var(--text-2); line-height:1.5;
-}
-.step-text strong { color:var(--text-1); }
+# ── Settings helpers ──────────────────────────────────────────────────────────
+def get_setting(key, default=None):
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT value FROM settings WHERE key=%s", (key,))
+                row = cur.fetchone()
+                return row["value"] if row else default
+    except Exception as e:
+        print(f"[DB] Errore lettura setting {key}: {e}")
+        return default
 
-/* Toast */
-.toast-stack {
-  position:fixed; bottom:20px; right:20px;
-  display:flex; flex-direction:column; gap:10px;
-  z-index:9999;
-}
-.toast {
-  display:flex; align-items:center; gap:10px;
-  background:var(--green); color:#0C1A0C;
-  padding:12px 16px; border-radius:8px;
-  font-weight:500; font-size:13px;
-  animation:slideIn 0.3s cubic-bezier(0.4,0,0.2,1);
-  box-shadow:0 8px 24px rgba(78,203,116,0.3);
-}
-.toast.err {
-  background:var(--red); color:#fff;
-  box-shadow:0 8px 24px rgba(240,90,82,0.3);
-}
-@keyframes slideIn {
-  from { opacity:0; transform:translateX(100px); }
-  to { opacity:1; transform:translateX(0); }
-}
+def set_setting(key, value):
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO settings (key, value) VALUES (%s, %s) "
+                    "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+                    (key, value)
+                )
+                conn.commit()
+    except Exception as e:
+        print(f"[DB] Errore scrittura setting {key}: {e}")
 
-/* Sidebar responsive */
-.sidebar-item {
-  width:100%; display:flex; align-items:center; gap:12px;
-  padding:10px 16px; text-decoration:none; color:var(--text-3);
-  transition:all 0.2s;
-}
-.sidebar-item:hover { color:var(--text-1); background:var(--surface-3); }
-.sidebar-item.active { color:var(--green); }
-</style>
-</head>
-<body>
+# ── SendGrid Email Configuration ──────────────────────────────────────────────
+def send_email_smtp(recipient_email: str, subject: str, body_html: str) -> bool:
+    """Invia email via SendGrid API (compatibile con Render.com)."""
+    try:
+        api_key = os.environ.get("SENDGRID_API_KEY", "").strip()
+        from_email = os.environ.get("SENDGRID_FROM_EMAIL", "").strip()
 
-<div class="layout">
-  <aside class="sidebar">
-    <div class="sidebar-logo">
-      <svg viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-      </svg>
-    </div>
+        if not api_key:
+            print("[Email] SENDGRID_API_KEY non configurata")
+            return False
+        if not from_email:
+            print("[Email] SENDGRID_FROM_EMAIL non configurata")
+            return False
 
-    <a href="/" class="nav-link">
-      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-      </svg>
-      <span class="nav-label">Dashboard</span>
-    </a>
+        sg = sendgrid.SendGridAPIClient(api_key=api_key)
+        message = Mail(
+            from_email=Email(from_email),
+            to_emails=To(recipient_email),
+            subject=subject,
+            html_content=Content("text/html", body_html)
+        )
+        response = sg.send(message)
 
-    <a href="/settings" class="nav-link active">
-      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="1"></circle>
-        <path d="M12 1v6m0 6v6"></path>
-        <path d="M4.22 4.22l4.24 4.24m2.12 2.12l4.24 4.24M1 12h6m6 0h6"></path>
-        <path d="M4.22 19.78l4.24-4.24m2.12-2.12l4.24-4.24"/>
-      </svg>
-      <span class="nav-label">Impostazioni</span>
-    </a>
+        if response.status_code in (200, 202):
+            print(f"[Email] Email inviata a {recipient_email} (status {response.status_code})")
+            return True
+        else:
+            print(f"[Email] Errore SendGrid status {response.status_code}: {response.body}")
+            return False
+    except Exception as e:
+        print(f"[Email] Errore invio SendGrid: {e}")
+        return False
 
-    <div class="sidebar-spacer"></div>
+# ── Email reminder ────────────────────────────────────────────────────────────
+def send_reminder_email(doc, days_left):
+    """Invia email di reminder per una scadenza."""
+    user_email = get_setting("user_email", "")
+    if not user_email:
+        print(f"[Reminder] Email non configurata per doc {doc['id']}")
+        return False
+    
+    doc_name = doc["name"]
+    category = doc.get("category", "Senza categoria")
+    expiry = doc["expiry_date"]
+    note = doc.get("note", "")
+    
+    subject = f"⚠️ Scadenza in {days_left} giorni: {doc_name}"
+    
+    body_html = f"""
+    <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <h2>Reminder Scadenza Documento</h2>
+            <p><strong>Documento:</strong> {doc_name}</p>
+            <p><strong>Categoria:</strong> {category}</p>
+            <p><strong>Data scadenza:</strong> {expiry}</p>
+            <p><strong>Giorni rimanenti:</strong> <span style="color: #d32f2f; font-weight: bold;">{days_left}</span></p>
+            {f'<p><strong>Note:</strong> {note}</p>' if note else ''}
+            <hr>
+            <p style="font-size: 12px; color: #666;">
+                Questo è un reminder automatico. Accedi a <strong>KE Scadenziario</strong> per gestire i tuoi documenti.
+            </p>
+        </body>
+    </html>
+    """
+    
+    return send_email_smtp(user_email, subject, body_html)
 
-    <div class="status-pill">
-      <div class="status-dot on"></div>
-      <span class="status-text">SMTP Attivo</span>
-    </div>
+def check_expirations():
+    """Controlla i documenti in scadenza e invia reminder."""
+    print("[Scheduler] Verifica scadenze...")
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                # Controlla documenti a 30 giorni
+                cur.execute("""
+                    SELECT * FROM documents 
+                    WHERE DATE(expiry_date) = CURRENT_DATE + INTERVAL '30 days'
+                    AND reminder_sent_30 = 0
+                """)
+                for doc in cur.fetchall():
+                    doc_dict = dict(doc)
+                    if send_reminder_email(doc_dict, 30):
+                        cur.execute(
+                            "UPDATE documents SET reminder_sent_30=1 WHERE id=%s",
+                            (doc_dict["id"],)
+                        )
+                
+                # Controlla documenti a 7 giorni
+                cur.execute("""
+                    SELECT * FROM documents 
+                    WHERE DATE(expiry_date) = CURRENT_DATE + INTERVAL '7 days'
+                    AND reminder_sent_7 = 0
+                """)
+                for doc in cur.fetchall():
+                    doc_dict = dict(doc)
+                    if send_reminder_email(doc_dict, 7):
+                        cur.execute(
+                            "UPDATE documents SET reminder_sent_7=1 WHERE id=%s",
+                            (doc_dict["id"],)
+                        )
+                
+                conn.commit()
+    except Exception as e:
+        print(f"[Scheduler] Errore: {e}")
 
-    <a href="/logout" class="nav-link" style="margin-top:8px;">
-      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-        <polyline points="16 17 21 12 16 7"></polyline>
-        <line x1="21" y1="12" x2="9" y2="12"></line>
-      </svg>
-      <span class="nav-label">Esci</span>
-    </a>
-  </aside>
+scheduler = BackgroundScheduler()
+scheduler.add_job(check_expirations, "cron", hour=8, minute=0)
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
 
-  <div class="main">
-    <header class="topbar">
-      <div>
-        <div class="topbar-title">Impost<em>azioni</em></div>
-        <div class="topbar-sub">Configura notifiche SMTP e Gemini AI</div>
-      </div>
-    </header>
+# ══════════════════════════════════════════════════════════════════════════════
+# ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
 
-    <div class="content">
+@app.before_request
+def before_request():
+    ensure_db()
 
-      <!-- Email SMTP -->
-      <div class="section-card">
-        <div class="section-head">
-          <div>
-            <div class="section-title"><span class="ico">📧</span> Email SMTP — Notifiche Automatiche</div>
-            <div class="section-desc">Ricevi email ai 30 e 7 giorni prima delle scadenze usando il tuo provider SMTP (Outlook, Aruba, ecc.)</div>
-          </div>
-          <span id="smtpBadge"><span class="badge badge-ok">Configurato</span></span>
-        </div>
+@app.after_request
+def security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
 
-        <div class="status-row">
-          <span class="status-icon">✅</span>
-          <div>
-            <div class="status-title">Sistema SMTP Attivo</div>
-            <div class="status-sub">Email configurate tramite variabili d'ambiente su Render</div>
-          </div>
-        </div>
+@app.route("/login")
+def login_page():
+    if session.get("logged_in"):
+        return redirect(url_for("index"))
+    return render_template("login.html")
 
-        <div class="field">
-          <label>Email dove ricevere i reminder</label>
-          <input type="email" id="reminderEmail" placeholder="es. tuaaaa@outlook.com">
-        </div>
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        return jsonify({"ok": False, "error": f"Troppi tentativi. Riprova tra {remaining} minuti."}), 429
 
-        <div class="action-row">
-          <button class="btn btn-primary btn-sm" onclick="saveEmail()">
-            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
-            Salva email
-          </button>
-          <button class="btn btn-ghost btn-sm" onclick="testEmail()">
-            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-            Invia email di prova
-          </button>
-        </div>
+    data = request.get_json()
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "")
 
-        <div class="info-box">
-          <strong>Configurazione SMTP:</strong> Le credenziali sono già impostate su Render con questi parametri:<br><br>
-          <code>SMTP_SERVER=smtp-mail.outlook.com</code><br>
-          <code>SMTP_PORT=587</code><br>
-          <code>SMTP_USER=[tua email]</code><br>
-          <code>SMTP_PASSWORD=[tua password]</code><br><br>
-          Inserisci qui l'email dove vuoi ricevere i reminder e clicca "Salva".
-        </div>
-      </div>
+    stored_hash = os.environ.get("LOGIN_PASSWORD_HASH", "")
+    stored_plain = LOGIN_PASSWORD
 
-      <!-- Gemini API -->
-      <div class="section-card">
-        <div class="section-head">
-          <div>
-            <div class="section-title"><span class="ico">🤖</span> KE AI Core — Gemini API</div>
-            <div class="section-desc">Il motore AI che analizza i documenti e estrae automaticamente nome, categoria e data di scadenza.</div>
-          </div>
-          <span id="apiKeyBadge"></span>
-        </div>
-        <div class="info-box">
-          <strong>Configurazione:</strong> imposta la chiave come variabile d'ambiente su Render.<br><br>
-          <strong>Render Environment Variables:</strong> <code>GEMINI_API_KEY=AIzaSy-tuachiave</code><br><br>
-          Ottieni la tua chiave su <strong>aistudio.google.com</strong> → API Keys.
-        </div>
-      </div>
+    if username != LOGIN_USERNAME:
+        bcrypt.checkpw(b"dummy", b"$2b$12$invalidhashfortimingprotectio.AAAAAAAAAAAAAAAAAAAAAA")
+        record_failed(ip)
+        return jsonify({"ok": False, "error": "Credenziali non valide"}), 401
 
-      <!-- Protocollo -->
-      <div class="section-card">
-        <div class="section-head">
-          <div>
-            <div class="section-title"><span class="ico">🔄</span> Protocollo di Monitoraggio</div>
-            <div class="section-desc">Come funziona il sistema di notifiche automatiche.</div>
-          </div>
-        </div>
-        <div class="steps">
-          <div class="step-item">
-            <div class="step-num">1</div>
-            <div class="step-text">Ogni giorno alle <strong>08:00</strong> il server esegue una scansione completa dell'archivio.</div>
-          </div>
-          <div class="step-item">
-            <div class="step-num">2</div>
-            <div class="step-text">Se un documento scade tra esattamente <strong>30 giorni</strong>, viene inviata una email di promemoria anticipata.</div>
-          </div>
-          <div class="step-item">
-            <div class="step-num">3</div>
-            <div class="step-text">Un secondo promemoria critico viene inviato quando mancano <strong>7 giorni</strong> alla scadenza.</div>
-          </div>
-          <div class="step-item">
-            <div class="step-num">4</div>
-            <div class="step-text">Le email vengono inviate tramite SMTP dal tuo provider (Outlook, Aruba, ecc.). Verifica la configurazione con "Email di prova".</div>
-          </div>
-        </div>
-      </div>
+    ok = False
+    if stored_hash:
+        try:
+            ok = bcrypt.checkpw(password.encode(), stored_hash.encode())
+        except Exception:
+            ok = False
+    else:
+        ok = (password == stored_plain)
 
-    </div>
-  </div>
-</div>
+    if not ok:
+        record_failed(ip)
+        return jsonify({"ok": False, "error": "Credenziali non valide"}), 401
 
-<div class="toast-stack" id="toastStack"></div>
+    clear_attempts(ip)
+    session["logged_in"] = True
+    session.permanent = True
+    print(f"[Login] Accesso: {username} da {ip}")
+    return jsonify({"ok": True})
 
-<script>
-function toast(msg, err=false) {
-  const stack = document.getElementById('toastStack');
-  const el = document.createElement('div');
-  el.className = 'toast' + (err ? ' err' : '');
-  el.innerHTML = `<span>${err ? '❌' : '✅'}</span><span>${msg}</span>`;
-  stack.appendChild(el);
-  setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity 0.4s'; setTimeout(()=>el.remove(),400); }, 3500);
-}
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login_page"))
 
-async function loadSettings() {
-  try {
-    const s = await fetch('/api/settings').then(r=>r.json());
+@app.route("/")
+@login_required
+def index():
+    return render_template("index.html")
 
-    if (s.user_email) document.getElementById('reminderEmail').value = s.user_email;
+@app.route("/settings")
+@login_required
+def settings_page():
+    return render_template("settings.html")
 
-    document.getElementById('apiKeyBadge').innerHTML = s.gemini_key_set
-      ? '<span class="badge badge-ok">Configurato</span>'
-      : '<span class="badge badge-warn">Non impostata</span>';
+@app.route("/api/documents", methods=["GET"])
+@login_required
+def get_documents():
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM documents ORDER BY expiry_date ASC")
+                docs = cur.fetchall()
+        return jsonify([dict(d) for d in docs])
+    except Exception as e:
+        print(f"[API] Errore get_documents: {e}")
+        return jsonify([])
 
-  } catch(e) {
-    toast('Errore caricamento impostazioni', true);
-  }
-}
+@app.route("/api/documents", methods=["POST"])
+@login_required
+def add_document():
+    try:
+        data = request.get_json()
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO documents (name, category, expiry_date, note) VALUES (%s,%s,%s,%s) RETURNING *",
+                    (data["name"], data.get("category", "Altro"), data["expiry_date"], data.get("note", "")),
+                )
+                doc = cur.fetchone()
+                conn.commit()
+        return jsonify(dict(doc)), 201
+    except Exception as e:
+        print(f"[API] Errore add_document: {e}")
+        return jsonify({"error": str(e)}), 500
 
-async function saveEmail() {
-  const email = document.getElementById('reminderEmail').value.trim();
-  if (!email) { toast('Inserisci un indirizzo email valido', true); return; }
-  try {
-    const res = await fetch('/api/settings/email', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({email})
-    });
-    if (res.ok) {
-      toast('Email salvata con successo!');
-    } else {
-      toast('Errore nel salvataggio', true);
-    }
-  } catch(e) {
-    toast('Errore di connessione', true);
-  }
-}
+@app.route("/api/documents/<int:doc_id>", methods=["PUT"])
+@login_required
+def update_document(doc_id):
+    try:
+        data = request.get_json()
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE documents SET name=%s, category=%s, expiry_date=%s, note=%s WHERE id=%s RETURNING *",
+                    (data["name"], data.get("category"), data["expiry_date"], data.get("note", ""), doc_id),
+                )
+                doc = cur.fetchone()
+                conn.commit()
+        return jsonify(dict(doc))
+    except Exception as e:
+        print(f"[API] Errore update_document: {e}")
+        return jsonify({"error": str(e)}), 500
 
-async function testEmail() {
-  const email = document.getElementById('reminderEmail').value.trim();
-  if (!email) {
-    toast('Inserisci prima l\'email dove ricevere i reminder', true);
-    return;
-  }
+@app.route("/api/documents/<int:doc_id>", methods=["DELETE"])
+@login_required
+def delete_document(doc_id):
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM documents WHERE id=%s", (doc_id,))
+                conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"[API] Errore delete_document: {e}")
+        return jsonify({"error": str(e)}), 500
 
-  try {
-    const res = await fetch('/api/test-email', { method:'POST' });
-    const data = await res.json();
-    if (data.ok) {
-      toast('Email di prova inviata! Controlla la tua inbox (o spam)');
-    } else {
-      toast('Errore: ' + (data.error || 'Invio fallito'), true);
-    }
-  } catch(e) {
-    toast('Errore di connessione', true);
-  }
-}
+@app.route("/api/upload", methods=["POST"])
+@login_required
+def upload_file():
+    return jsonify({"error": "Upload disabilitato - usa il form manuale"}), 400
 
-loadSettings();
-</script>
-</body>
-</html>
+@app.route("/api/settings", methods=["GET"])
+@login_required
+def get_settings():
+    return jsonify({
+        "user_email": get_setting("user_email", ""),
+    })
+
+@app.route("/api/settings/email", methods=["POST"])
+@login_required
+def update_email():
+    try:
+        data = request.get_json()
+        email = data.get("email", "").strip()
+        if not email:
+            return jsonify({"error": "Email non valida"}), 400
+        set_setting("user_email", email)
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"[API] Errore update_email: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/test-email", methods=["POST"])
+@login_required
+def test_email():
+    try:
+        user_email = get_setting("user_email", "")
+        if not user_email:
+            return jsonify({"ok": False, "error": "Nessuna email configurata"}), 400
+        
+        api_key = os.environ.get("SENDGRID_API_KEY", "").strip()
+        if not api_key:
+            return jsonify({"ok": False, "error": "SENDGRID_API_KEY non configurata nelle variabili d'ambiente"}), 400
+        
+        test_doc = {
+            "id": 0,
+            "name": "Documento di prova KE Group",
+            "expiry_date": (datetime.now().date() + timedelta(days=30)).isoformat(),
+            "category": "Test",
+            "note": "Email di test"
+        }
+        
+        ok = send_reminder_email(test_doc, 30)
+        if ok:
+            return jsonify({"ok": True}), 200
+        else:
+            return jsonify({"ok": False, "error": "Errore nell'invio dell'email"}), 500
+    except Exception as e:
+        print(f"[API] Errore test_email: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Non trovato"}), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    print(f"[ERROR] 500: {e}")
+    return jsonify({"error": "Errore interno del server"}), 500
+
+if __name__ == "__main__":
+    app.run(debug=False, port=int(os.environ.get("PORT", 5000)))
