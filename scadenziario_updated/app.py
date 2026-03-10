@@ -19,7 +19,7 @@ import atexit
 
 os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.secret_key = os.environ.get("FLASK_SECRET", "ke-group-secret-changeme-in-production")
 app.permanent_session_lifetime = timedelta(hours=8)
 
