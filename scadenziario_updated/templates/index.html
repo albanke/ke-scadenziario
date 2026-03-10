@@ -258,6 +258,12 @@ mark{background:rgba(78,203,116,0.18);color:var(--t1);border-radius:2px;padding:
 /* RESPONSIVE */
 @media(max-width:900px){.sb{display:none}.sgrid{grid-template-columns:repeat(2,1fr)}.topbar{padding:13px 16px}.cnt{padding:18px 16px}}
 @media(max-width:600px){.sgrid{grid-template-columns:1fr 1fr}.f2{grid-template-columns:1fr}.cbar{flex-direction:column;align-items:stretch}}
+
+/* UPLOAD ZONE */
+.upz{border:1.5px dashed var(--s4);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:all .2s;color:var(--t3);font-size:12px;display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px}
+.upz:hover,.upz.drag{border-color:var(--grn);color:var(--grn);background:rgba(78,203,116,.05)}
+.upz.has-file{border-color:var(--grn);background:rgba(78,203,116,.07);color:var(--t2)}
+#nUpLbl,#eUpLbl{display:flex;align-items:center;gap:7px;pointer-events:none}
 </style>
 </head>
 <body>
@@ -412,6 +418,21 @@ mark{background:rgba(78,203,116,0.18);color:var(--t1);border-radius:2px;padding:
       </div>
     </div>
     <div class="fld"><label>Note</label><textarea id="nNo" placeholder="Riferimenti, dettagli, contatti…"></textarea></div>
+    <div class="fld">
+      <label>Allega documento <span style="color:var(--t3);font-weight:400;font-size:9px;text-transform:none;letter-spacing:0">(PDF, immagine — max 10MB)</span></label>
+      <div class="upz" id="nUpZ" onclick="document.getElementById('nFile').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="upDrop(event,'n')">
+        <input type="file" id="nFile" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="upSel(this,'n')">
+        <div id="nUpLbl"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" style="opacity:.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M8 12l4-4 4 4M12 8v8"/></svg><span>Trascina o clicca per allegare</span></div>
+      </div>
+      <div id="nGeminiBox" style="display:none;margin-top:6px">
+        <button class="btn btn-g" style="width:100%;font-size:11px" onclick="runGemini('n')">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="opacity:.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          Analizza con Gemini AI
+        </button>
+        <div id="nGeminiSt" style="font-size:10px;color:var(--t3);margin-top:4px;text-align:center"></div>
+      </div>
+    </div>
+    <input type="hidden" id="nFilePath" value="">
     <div class="mf">
       <button class="btn btn-g" onclick="cm('mNew')">Annulla</button>
       <button class="btn btn-p" onclick="svNew()"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>Salva</button>
@@ -437,6 +458,14 @@ mark{background:rgba(78,203,116,0.18);color:var(--t1);border-radius:2px;padding:
       </div>
     </div>
     <div class="fld"><label>Note</label><textarea id="eNo"></textarea></div>
+    <div class="fld">
+      <label>Allegato <span style="color:var(--t3);font-weight:400;font-size:9px;text-transform:none;letter-spacing:0">(PDF, immagine — max 10MB)</span></label>
+      <div class="upz" id="eUpZ" onclick="document.getElementById('eFile').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="upDrop(event,'e')">
+        <input type="file" id="eFile" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="upSel(this,'e')">
+        <div id="eUpLbl"><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" style="opacity:.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M8 12l4-4 4 4M12 8v8"/></svg><span>Trascina o clicca per allegare</span></div>
+      </div>
+    </div>
+    <input type="hidden" id="eFilePath" value="">
     <div class="mf">
       <button class="btn btn-g" onclick="cm('mEdit')">Annulla</button>
       <button class="btn btn-p" onclick="svEdit()">Aggiorna</button>
@@ -813,6 +842,7 @@ function openNew(){
   ['nN','nD','nNo'].forEach(function(id){document.getElementById(id).value='';});
   document.getElementById('nC').value='Contratto';document.getElementById('nP').value='Media';
   document.getElementById('nTD').value='[]';document.getElementById('nTW').querySelectorAll('.tp2').forEach(function(el){el.remove();});
+  resetUpload('n');
   sm('mNew');
 }
 async function svNew(){
@@ -822,7 +852,20 @@ async function svNew(){
   var note=enc(document.getElementById('nNo').value.trim(),tags,pri);
   try{
     var r=await fetch('/api/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,category:document.getElementById('nC').value,expiry_date:dt,note:note})});
-    if(!r.ok)throw new Error();cm('mNew');toast('Documento salvato');loadD(0);
+    if(!r.ok)throw new Error();
+    var saved=await r.json();
+    // Upload file se presente (e non già caricato da Gemini)
+    var preFp=document.getElementById('nFilePath').value;
+    var inp=document.getElementById('nFile');
+    if(!preFp && inp && inp.files.length){
+      var fd2=new FormData();fd2.append('file',inp.files[0]);fd2.append('doc_id',saved.id);
+      await fetch('/api/upload',{method:'POST',body:fd2});
+    } else if(preFp && saved.id){
+      // Associa file già caricato da Gemini
+      await fetch('/api/documents/'+saved.id,{method:'PUT',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:saved.name,category:saved.category,expiry_date:saved.expiry_date,note:saved.note,file_path:preFp})});
+    }
+    cm('mNew');toast('Documento salvato');loadD(0);
   }catch(err){toast('Errore nel salvataggio','err');}
 }
 function opEd(id){
@@ -831,6 +874,15 @@ function opEd(id){
   document.getElementById('eC').value=d.category||'Altro';document.getElementById('eD').value=d.expiry_date;
   document.getElementById('eNo').value=d.cn||'';document.getElementById('eP').value=d.priority||'Media';
   var tags=d.tags||[];document.getElementById('eTD').value=JSON.stringify(tags);rtp('e',tags);
+  resetUpload('e');
+  // Mostra allegato esistente se presente
+  if(d.file_path){
+    var lbl=document.getElementById('eUpLbl');
+    var zone=document.getElementById('eUpZ');
+    if(lbl) lbl.innerHTML='<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9z"/></svg><span>'+e(d.file_path.split('_').slice(2).join('_')||d.file_path)+'</span>';
+    if(zone) zone.classList.add('has-file');
+    document.getElementById('eFilePath').value=d.file_path;
+  }
   sm('mEdit');
 }
 async function svEdit(){
@@ -839,6 +891,12 @@ async function svEdit(){
   var tags=pj(document.getElementById('eTD').value);var pri=document.getElementById('eP').value;
   var note=enc(document.getElementById('eNo').value.trim(),tags,pri);
   try{
+    // Upload nuovo file se selezionato
+    var inp=document.getElementById('eFile');
+    if(inp && inp.files.length){
+      var fd2=new FormData();fd2.append('file',inp.files[0]);fd2.append('doc_id',id);
+      await fetch('/api/upload',{method:'POST',body:fd2});
+    }
     var r=await fetch('/api/documents/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,category:document.getElementById('eC').value,expiry_date:dt,note:note})});
     if(!r.ok)throw new Error();cm('mEdit');toast('Documento aggiornato');loadD(0);
   }catch(err){toast('Errore aggiornamento','err');}
@@ -895,6 +953,111 @@ function toast(msg,type){
   st.appendChild(el);
   setTimeout(function(){el.style.transition='opacity .3s';el.style.opacity='0';setTimeout(function(){el.remove();},320);},4500);
 }
+// ── UPLOAD + GEMINI ──────────────────────────────────────────────────────────
+
+function upSel(input, prefix) {
+  var f = input.files[0];
+  if (!f) return;
+  var lbl = document.getElementById(prefix + 'UpLbl');
+  var zone = document.getElementById(prefix + 'UpZ');
+  lbl.innerHTML = '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9z"/></svg><span>' + e(f.name) + ' (' + (f.size/1024/1024).toFixed(1) + 'MB)</span>';
+  zone.classList.add('has-file');
+  // Mostra bottone Gemini solo nel modal nuovo
+  if (prefix === 'n') {
+    document.getElementById('nGeminiBox').style.display = 'block';
+    document.getElementById('nFilePath').value = '';
+    document.getElementById('nGeminiSt').textContent = '';
+  }
+}
+
+function upDrop(ev, prefix) {
+  ev.preventDefault();
+  document.getElementById(prefix + 'UpZ').classList.remove('drag');
+  var dt = ev.dataTransfer;
+  if (!dt || !dt.files.length) return;
+  var inp = document.getElementById(prefix + 'File');
+  // Assegna il file tramite DataTransfer
+  var transfer = new DataTransfer();
+  transfer.items.add(dt.files[0]);
+  inp.files = transfer.files;
+  upSel(inp, prefix);
+}
+
+async function uploadFile(prefix, docId) {
+  var inp = document.getElementById(prefix + 'File');
+  if (!inp || !inp.files.length) return null;
+  var fd = new FormData();
+  fd.append('file', inp.files[0]);
+  if (docId) fd.append('doc_id', docId);
+  try {
+    var r = await fetch('/api/upload', { method: 'POST', body: fd });
+    var data = await r.json();
+    if (!r.ok || !data.ok) { toast('Errore upload: ' + (data.error || 'sconosciuto'), 'err'); return null; }
+    return data.file_path;
+  } catch(err) {
+    toast('Errore upload file', 'err');
+    return null;
+  }
+}
+
+async function runGemini(prefix) {
+  var inp = document.getElementById(prefix + 'File');
+  if (!inp || !inp.files.length) { toast('Nessun file selezionato', 'warn'); return; }
+  var st = document.getElementById(prefix + 'GeminiSt');
+  var btn = document.querySelector('#' + prefix + 'GeminiBox .btn');
+  btn.disabled = true;
+  st.textContent = '⏳ Caricamento e analisi in corso…';
+
+  // 1) Carica il file
+  var fd = new FormData();
+  fd.append('file', inp.files[0]);
+  fd.append('analyze', 'true');
+  try {
+    var r = await fetch('/api/upload', { method: 'POST', body: fd });
+    var data = await r.json();
+    if (!r.ok || !data.ok) { st.textContent = '❌ Errore: ' + (data.error || 'upload fallito'); btn.disabled = false; return; }
+
+    document.getElementById(prefix + 'FilePath').value = data.file_path;
+
+    if (data.gemini_error) { st.textContent = '⚠️ Gemini non disponibile: ' + data.gemini_error; btn.disabled = false; return; }
+    if (!data.gemini) { st.textContent = '⚠️ Nessuna risposta da Gemini'; btn.disabled = false; return; }
+
+    // 2) Compila i campi
+    var g = data.gemini;
+    if (g.name) document.getElementById(prefix + 'N').value = g.name;
+    if (g.expiry_date) document.getElementById(prefix + 'D').value = g.expiry_date;
+    if (g.category) {
+      var sel = document.getElementById(prefix + 'C');
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === g.category || sel.options[i].text === g.category) { sel.selectedIndex = i; break; }
+      }
+    }
+    if (g.note) document.getElementById(prefix + 'No').value = g.note;
+    st.textContent = '✅ Dati estratti! Verifica e correggi se necessario.';
+    btn.disabled = false;
+  } catch(err) {
+    st.textContent = '❌ Errore di rete';
+    btn.disabled = false;
+  }
+}
+
+function resetUpload(prefix) {
+  var inp = document.getElementById(prefix + 'File');
+  var lbl = document.getElementById(prefix + 'UpLbl');
+  var zone = document.getElementById(prefix + 'UpZ');
+  if (inp) inp.value = '';
+  if (lbl) lbl.innerHTML = '<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" style="opacity:.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M8 12l4-4 4 4M12 8v8"/></svg><span>Trascina o clicca per allegare</span>';
+  if (zone) zone.classList.remove('has-file', 'drag');
+  var fp = document.getElementById(prefix + 'FilePath');
+  if (fp) fp.value = '';
+  if (prefix === 'n') {
+    var gb = document.getElementById('nGeminiBox');
+    if (gb) gb.style.display = 'none';
+    var gs = document.getElementById('nGeminiSt');
+    if (gs) gs.textContent = '';
+  }
+}
+
 </script>
 </body>
 </html>
