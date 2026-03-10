@@ -486,16 +486,29 @@ mark{background:rgba(78,203,116,0.18);color:var(--t1);border-radius:2px;padding:
 
 <script>
 var docs=[],view='t',sf='d',sd=1,delT=null,rnwT=null,rnwO='6m',cY,cM,notifOk=false,ci=null;
+var IS_ELECTRON = (typeof window.electronAPI !== 'undefined');
+var _loadPending = false;
+
 (function(){
   var n=new Date();cY=n.getFullYear();cM=n.getMonth();
   document.getElementById('tdate').textContent=n.toLocaleDateString('it-IT',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   ['si','fc','fs','fp'].forEach(function(id){document.getElementById(id).addEventListener('input',ren);});
-  initN();loadD();
-  setInterval(loadD,5*60*1000);
+  initN();loadD(0);
+  setInterval(function(){ loadD(0); },5*60*1000);
+
+  if(IS_ELECTRON && window.electronAPI.onBadgeUpdate){
+    window.electronAPI.onBadgeUpdate(function(data){ updBnr(); });
+  }
 })();
 
 function initN(){
   var dot=document.getElementById('ndot'),lbl=document.getElementById('nlbl');
+  // Electron: notifiche sempre disponibili tramite electronAPI
+  if(IS_ELECTRON){
+    notifOk=true;dot.classList.add('on');lbl.textContent='Notifiche attive';
+    // In Electron non serve schedule: ci pensa main.js ogni ora
+    return;
+  }
   if(!('Notification' in window)){lbl.textContent='Non supportate';return;}
   if(Notification.permission==='granted'){notifOk=true;dot.classList.add('on');lbl.textContent='Notifiche attive';sched();}
   else if(Notification.permission==='default'){lbl.textContent='Abilita notifiche';}
@@ -503,6 +516,12 @@ function initN(){
 }
 
 function notifClick(){
+  // Electron: usa electronAPI per inviare notifica desktop nativa
+  if(IS_ELECTRON){
+    window.electronAPI.sendNotification('🔔 KE Scadenziario','Notifiche desktop attive e funzionanti!');
+    toast('Notifica desktop inviata!');
+    return;
+  }
   if(!('Notification' in window)){toast('Browser non supporta le notifiche','warn');return;}
   if(Notification.permission==='granted'){
     sndN('🔔 KE Scadenziario','Notifiche attive e funzionanti!',null);
@@ -519,16 +538,23 @@ function notifClick(){
 }
 
 function sndN(title,body,tag){
+  // In Electron: usa sempre l'API nativa di Electron (funziona al 100%)
+  if(IS_ELECTRON){
+    window.electronAPI.sendNotification(title,body);
+    return;
+  }
   if(!('Notification' in window)||Notification.permission!=='granted') return;
   try{
     var o={body:body,tag:tag||'ke',icon:'/static/icon.png'};
     if(navigator.serviceWorker&&navigator.serviceWorker.controller){
       navigator.serviceWorker.ready.then(function(r){r.showNotification(title,o);}).catch(function(){new Notification(title,o);});
     } else {new Notification(title,o);}
-  }catch(e){try{new Notification(title,{body:body});}catch(e2){}}
+  }catch(err){try{new Notification(title,{body:body});}catch(e2){}}
 }
 
 function sched(){
+  // Solo per browser — in Electron ci pensa main.js
+  if(IS_ELECTRON) return;
   setTimeout(chkN,3000);
   if(ci) clearInterval(ci);
   ci=setInterval(chkN,60*60*1000);
@@ -536,9 +562,11 @@ function sched(){
 
 function chkN(){
   if(!notifOk||!docs.length) return;
+  // In Electron le notifiche vengono già gestite da main.js — qui non mandiamo duplicati
+  if(IS_ELECTRON) return;
   var today=new Date();today.setHours(0,0,0,0);
   var key='ke_nc_'+today.getTime();
-  if(localStorage.getItem(key)) return;
+  try{ if(localStorage.getItem(key)) return; }catch(e){}
   var exp=docs.filter(function(d){return gd(d.expiry_date)<0;});
   var cr=docs.filter(function(d){var x=gd(d.expiry_date);return x>=0&&x<=3;});
   var w7=docs.filter(function(d){var x=gd(d.expiry_date);return x>3&&x<=7;});
@@ -547,13 +575,35 @@ function chkN(){
   else if(cr.length){sndN('⚠️ Scadenze critiche: '+cr.length,cr.map(function(d){return'• '+d.name+' ('+gd(d.expiry_date)+'gg)';}).join('\n'),'ke-cr');}
   else if(w7.length){sndN('📋 '+w7.length+' scadenz'+(w7.length>1?'e':'a')+' entro 7 giorni',w7.map(function(d){return'• '+d.name;}).join('\n'),'ke-w7');}
   else if(w30.length){sndN('📅 Promemoria: '+w30.length+' scadenz'+(w30.length>1?'e':'a')+' entro 30 giorni',w30.slice(0,3).map(function(d){return'• '+d.name+' ('+gd(d.expiry_date)+'gg)';}).join('\n'),'ke-w30');}
-  localStorage.setItem(key,'1');
+  try{localStorage.setItem(key,'1');}catch(e){}
 }
 
-async function loadD(){
-  try{
-    var r=await fetch('/api/documents');
-    var raw=await r.json();
+// loadD(attempt) — riprova con backoff esponenziale finché non ottiene i dati
+// attempt=0 → chiamata normale (dal refresh periodico o dopo salvataggio)
+// Non usa variabili globali di retry → ogni chiamata gestisce il proprio stato
+function loadD(attempt){
+  if(attempt === undefined) attempt = 0;
+  if(_loadPending && attempt === 0) return; // evita chiamate parallele solo al primo tentativo
+  if(attempt === 0) _loadPending = true;
+
+  fetch('/api/documents').then(function(r){
+    // Risposta non-JSON = Flask ha rediretto al login (sessione non ancora attiva)
+    var ct = r.headers.get('content-type') || '';
+    if(r.status === 401 || r.redirected || !ct.includes('application/json')){
+      if(attempt < 30){ // riprova fino a 30 volte (~30s totali)
+        var delay = Math.min(1000 * (attempt + 1), 3000);
+        setTimeout(function(){ loadD(attempt+1); }, delay);
+      } else {
+        _loadPending = false;
+        toast('Impossibile connettersi al server','err');
+      }
+      return null; // segnala di non continuare
+    }
+    return r.json();
+  }).then(function(raw){
+    if(raw === null || raw === undefined) return; // retry in corso
+    _loadPending = false;
+    if(!Array.isArray(raw)) return;
     docs=raw.map(function(d){
       var tags=[],pri='Media',note=d.note||'';
       var tm=note.match(/\[TAGS:(.*?)\]/);if(tm){try{tags=JSON.parse(tm[1]);}catch(e){}}
@@ -564,7 +614,15 @@ async function loadD(){
     document.getElementById('tcount').textContent=docs.length+' document'+(docs.length!==1?'i':'o');
     rSt();rBar();rAl();ren();rCal();updBnr();
     if(notifOk) chkN();
-  }catch(e){toast('Errore caricamento','err');}
+  }).catch(function(err){
+    _loadPending = false;
+    if(attempt < 30){
+      var delay = Math.min(1000 * (attempt + 1), 3000);
+      setTimeout(function(){ loadD(attempt+1); }, delay);
+    } else {
+      toast('Errore caricamento documenti','err');
+    }
+  });
 }
 
 function gd(s){var t=new Date();t.setHours(0,0,0,0);return Math.round((new Date(s)-t)/86400000);}
@@ -764,7 +822,7 @@ async function svNew(){
   var note=enc(document.getElementById('nNo').value.trim(),tags,pri);
   try{
     var r=await fetch('/api/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,category:document.getElementById('nC').value,expiry_date:dt,note:note})});
-    if(!r.ok)throw new Error();cm('mNew');toast('Documento salvato');loadD();
+    if(!r.ok)throw new Error();cm('mNew');toast('Documento salvato');loadD(0);
   }catch(err){toast('Errore nel salvataggio','err');}
 }
 function opEd(id){
@@ -782,11 +840,11 @@ async function svEdit(){
   var note=enc(document.getElementById('eNo').value.trim(),tags,pri);
   try{
     var r=await fetch('/api/documents/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,category:document.getElementById('eC').value,expiry_date:dt,note:note})});
-    if(!r.ok)throw new Error();cm('mEdit');toast('Documento aggiornato');loadD();
+    if(!r.ok)throw new Error();cm('mEdit');toast('Documento aggiornato');loadD(0);
   }catch(err){toast('Errore aggiornamento','err');}
 }
 function opDel(id){var d=docs.find(function(x){return x.id===id;});if(!d)return;delT=id;document.getElementById('delN').textContent=d.name;sm('mDel');}
-async function confDel(){if(!delT)return;try{await fetch('/api/documents/'+delT,{method:'DELETE'});cm('mDel');toast('Documento eliminato');loadD();}catch(err){toast('Errore eliminazione','err');}}
+async function confDel(){if(!delT)return;try{await fetch('/api/documents/'+delT,{method:'DELETE'});cm('mDel');toast('Documento eliminato');loadD(0);}catch(err){toast('Errore eliminazione','err');}}
 
 function opRnw(id){
   var d=docs.find(function(x){return x.id===id;});if(!d)return;
@@ -808,7 +866,7 @@ async function confRnw(){
   var d=docs.find(function(x){return x.id==id;});if(!d)return;
   try{
     await fetch('/api/documents/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:d.name,category:d.category,expiry_date:nd,note:d.note||''})});
-    cm('mRnw');toast('Rinnovato — nuova scadenza: '+fd(nd));loadD();
+    cm('mRnw');toast('Rinnovato — nuova scadenza: '+fd(nd));loadD(0);
   }catch(err){toast('Errore rinnovo','err');}
 }
 

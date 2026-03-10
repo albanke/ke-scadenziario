@@ -157,9 +157,11 @@ function updateTrayMenu(count) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Fetch docs
+//  Fetch docs — login + get documents con gestione cookie robusta
 // ─────────────────────────────────────────────────────────────
-function fetchDocs() {
+let _sessionCookie = null; // cache della sessione per evitare login ripetuti
+
+function doLogin() {
   return new Promise((resolve) => {
     const loginData = JSON.stringify({
       username: process.env.LOGIN_USERNAME || 'admin',
@@ -167,19 +169,58 @@ function fetchDocs() {
     });
     const loginReq = http.request({
       hostname: 'localhost', port: FLASK_PORT, path: '/api/login', method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(loginData) },
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(loginData),
+      },
     }, loginRes => {
-      const cookies = (loginRes.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
-      http.get({ hostname: 'localhost', port: FLASK_PORT, path: '/api/documents', headers: { Cookie: cookies } }, res => {
-        let body = '';
-        res.on('data', c => body += c);
-        res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve([]); } });
-      }).on('error', () => resolve([]));
+      // Raccogli tutti i Set-Cookie
+      const raw = loginRes.headers['set-cookie'] || [];
+      const cookie = raw.map(c => c.split(';')[0]).join('; ');
+      resolve(cookie || null);
     });
-    loginReq.on('error', () => resolve([]));
+    loginReq.on('error', () => resolve(null));
     loginReq.write(loginData);
     loginReq.end();
   });
+}
+
+function fetchWithCookie(cookie) {
+  return new Promise((resolve) => {
+    const opts = {
+      hostname: 'localhost', port: FLASK_PORT, path: '/api/documents',
+      headers: cookie ? { Cookie: cookie } : {},
+    };
+    const req = http.get(opts, res => {
+      // Se 401 o redirect → sessione scaduta
+      if (res.statusCode === 401 || res.statusCode === 302) { resolve(null); return; }
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          resolve(Array.isArray(parsed) ? parsed : null);
+        } catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
+async function fetchDocs() {
+  // 1) Prova con cookie cached
+  if (_sessionCookie) {
+    const docs = await fetchWithCookie(_sessionCookie);
+    if (docs !== null) return docs;
+    // Cookie scaduto — fa nuovo login
+    _sessionCookie = null;
+  }
+  // 2) Login fresco
+  const cookie = await doLogin();
+  if (!cookie) return [];
+  _sessionCookie = cookie;
+  const docs = await fetchWithCookie(cookie);
+  return docs || [];
 }
 
 function getDocStatus(expiryDate) {
@@ -279,9 +320,21 @@ ipcMain.handle('get-badge-count', async () => {
   return docs.filter(d => getDocStatus(d.expiry_date).days <= 7).length;
 });
 
+// Notifica nativa desktop — usata dal renderer via electronAPI.sendNotification
 ipcMain.on('notify', (_, { title, body }) => {
   if (Notification.isSupported())
     new Notification({ title, body, icon: path.join(__dirname, 'icon.png') }).show();
+});
+
+// Handler per il test notifica dal renderer (invoke)
+ipcMain.handle('send-test-notification', async () => {
+  if (Notification.isSupported()) {
+    new Notification({
+      title: '🔔 KE Scadenziario — Test',
+      body: 'Notifiche desktop attive e funzionanti!',
+    }).show();
+  }
+  return true;
 });
 
 ipcMain.on('open-external', (_, url) => shell.openExternal(url));
