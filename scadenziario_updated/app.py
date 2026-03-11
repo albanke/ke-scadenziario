@@ -164,10 +164,9 @@ def analyze_document_with_gemini(file_path, filename):
         with open(file_path, "rb") as f:
             file_data = f.read()
 
-model = genai.GenerativeModel("gemini-2.0-flash-lite")
-prompt = """Analizza questo documento e rispondi SOLO con un JSON valido (senza markdown, senza backtick), con questa struttura:
+        model = genai.GenerativeModel("gemini-2.0-flash-lite")
+        prompt = """Analizza questo documento e rispondi SOLO con un JSON valido (senza markdown, senza backtick), con questa struttura:
 {"name":"nome del documento","expiry_date":"YYYY-MM-DD oppure null","category":"una tra: Identità, Veicoli, Assicurazioni, Immobili, Lavoro, Sanitario, Finanziario, Altro","note":"breve nota max 100 caratteri"}"""
-
         response = model.generate_content([
             {"mime_type": mime_type, "data": file_data},
             prompt
