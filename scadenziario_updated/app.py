@@ -2,7 +2,6 @@ import os
 import json
 import re
 import base64
-import hashlib
 import secrets
 import psycopg2
 import psycopg2.extras
@@ -12,12 +11,6 @@ from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_from_directory
 from werkzeug.utils import secure_filename
-from apscheduler.schedulers.background import BackgroundScheduler
-import sendgrid
-from sendgrid.helpers.mail import Mail, Email, To, Content
-import atexit
-
-os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.secret_key = os.environ.get("FLASK_SECRET", "ke-group-secret-changeme-in-production")
@@ -74,6 +67,7 @@ def init_db():
                     id               SERIAL PRIMARY KEY,
                     name             TEXT NOT NULL,
                     category         TEXT,
+                    folder           TEXT DEFAULT 'Generale',
                     expiry_date      TEXT NOT NULL,
                     note             TEXT,
                     file_path        TEXT,
@@ -82,12 +76,11 @@ def init_db():
                     created_at       TEXT DEFAULT (to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'))
                 )
             """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS settings (
-                    key   TEXT PRIMARY KEY,
-                    value TEXT
-                )
-            """)
+            # Aggiungi colonna folder se non esiste (per DB esistenti)
+            try:
+                cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS folder TEXT DEFAULT 'Generale'")
+            except Exception:
+                pass
             conn.commit()
 
 _db_initialized = False
@@ -109,168 +102,21 @@ def login_required(f):
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Non autenticato"}), 401
             return redirect(url_for("login_page"))
+        ensure_db()
         return f(*args, **kwargs)
     return decorated
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# ── Settings helpers ──────────────────────────────────────────────────────────
-def get_setting(key, default=None):
-    try:
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT value FROM settings WHERE key=%s", (key,))
-                row = cur.fetchone()
-                return row["value"] if row else default
-    except Exception as e:
-        print(f"[DB] Errore lettura setting {key}: {e}")
-        return default
+# ── Routes ────────────────────────────────────────────────────────────────────
 
-def set_setting(key, value):
-    try:
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO settings (key, value) VALUES (%s, %s) "
-                    "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
-                    (key, value)
-                )
-                conn.commit()
-    except Exception as e:
-        print(f"[DB] Errore scrittura setting {key}: {e}")
-
-# ── Gemini AI ─────────────────────────────────────────────────────────────────
-def analyze_document_with_gemini(file_path, filename):
-    try:
-        from google import genai
-        from google.genai import types
-
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not api_key:
-            return {"error": "GEMINI_API_KEY non configurata"}
-
-        client = genai.Client(api_key=api_key)
-
-        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        mime_map = {
-            "pdf": "application/pdf",
-            "png": "image/png",
-            "jpg": "image/jpeg",
-            "jpeg": "image/jpeg",
-            "webp": "image/webp",
-        }
-        mime_type = mime_map.get(ext, "application/octet-stream")
-
-        with open(file_path, "rb") as f:
-            file_data = f.read()
-
-        prompt = """Analizza questo documento e rispondi SOLO con un JSON valido (senza markdown, senza backtick), con questa struttura:
-{"name":"nome del documento","expiry_date":"YYYY-MM-DD oppure null","category":"una tra: Identità, Veicoli, Assicurazioni, Immobili, Lavoro, Sanitario, Finanziario, Altro","note":"breve nota max 100 caratteri"}"""
-
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[
-                types.Part.from_bytes(data=file_data, mime_type=mime_type),
-                prompt,
-            ],
-        )
-
-        text = response.text.strip()
-        text = re.sub(r"```json\s*", "", text)
-        text = re.sub(r"```\s*", "", text).strip()
-        return json.loads(text)
-
-    except Exception as e:
-        print(f"[Gemini] Errore: {e}")
-        return {"error": str(e)}
-
-# ── Email ─────────────────────────────────────────────────────────────────────
-def send_email_smtp(recipient_email, subject, body_html):
-    try:
-        api_key = os.environ.get("SENDGRID_API_KEY", "").strip()
-        from_email = os.environ.get("SENDGRID_FROM_EMAIL", "").strip()
-        if not api_key or not from_email:
-            return False
-        sg = sendgrid.SendGridAPIClient(api_key=api_key)
-        message = Mail(
-            from_email=Email(from_email),
-            to_emails=To(recipient_email),
-            subject=subject,
-            html_content=Content("text/html", body_html)
-        )
-        response = sg.send(message)
-        return response.status_code in (200, 202)
-    except Exception as e:
-        print(f"[Email] Errore: {e}")
-        return False
-
-def send_reminder_email(doc, days_left):
-    user_email = get_setting("user_email", "")
-    if not user_email:
-        return False
-    doc_name = doc["name"]
-    category = doc.get("category", "Senza categoria")
-    expiry = doc["expiry_date"]
-    note = doc.get("note", "")
-    subject = f"⚠️ Scadenza in {days_left} giorni: {doc_name}"
-    body_html = f"""<html><body style="font-family:Arial,sans-serif;color:#333">
-<h2 style="color:#4ECB74">KE Scadenziario — Reminder</h2>
-<p><b>Documento:</b> {doc_name}</p>
-<p><b>Categoria:</b> {category}</p>
-<p><b>Scadenza:</b> {expiry}</p>
-<p><b>Giorni rimanenti:</b> <span style="color:#d32f2f;font-weight:bold">{days_left}</span></p>
-{f'<p><b>Note:</b> {note}</p>' if note else ''}
-<hr><p style="font-size:12px;color:#666">Reminder automatico da KE Scadenziario.</p>
-</body></html>"""
-    return send_email_smtp(user_email, subject, body_html)
-
-def check_expirations():
-    print("[Scheduler] Verifica scadenze...")
-    try:
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT * FROM documents
-                    WHERE DATE(expiry_date) = CURRENT_DATE + INTERVAL '30 days'
-                    AND reminder_sent_30 = 0
-                """)
-                for doc in cur.fetchall():
-                    d = dict(doc)
-                    if send_reminder_email(d, 30):
-                        cur.execute("UPDATE documents SET reminder_sent_30=1 WHERE id=%s", (d["id"],))
-                cur.execute("""
-                    SELECT * FROM documents
-                    WHERE DATE(expiry_date) = CURRENT_DATE + INTERVAL '7 days'
-                    AND reminder_sent_7 = 0
-                """)
-                for doc in cur.fetchall():
-                    d = dict(doc)
-                    if send_reminder_email(d, 7):
-                        cur.execute("UPDATE documents SET reminder_sent_7=1 WHERE id=%s", (d["id"],))
-                conn.commit()
-    except Exception as e:
-        print(f"[Scheduler] Errore: {e}")
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(check_expirations, "cron", hour=8, minute=0)
-scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ROUTES
-# ══════════════════════════════════════════════════════════════════════════════
-
-@app.before_request
-def before_request():
+@app.route("/")
+def index():
+    if not session.get("logged_in"):
+        return redirect(url_for("login_page"))
     ensure_db()
-
-@app.after_request
-def security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    return response
+    return render_template("index.html")
 
 @app.route("/login")
 def login_page():
@@ -278,52 +124,30 @@ def login_page():
         return redirect(url_for("index"))
     return render_template("login.html")
 
-@app.route("/api/login", methods=["POST"])
-def api_login():
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
-    allowed, remaining = check_rate_limit(ip)
-    if not allowed:
-        return jsonify({"ok": False, "error": f"Troppi tentativi. Riprova tra {remaining} minuti."}), 429
-    data = request.get_json() or {}
-    username = (data.get("username") or "").strip()
-    password = (data.get("password") or "")
-    if username != LOGIN_USERNAME:
-        bcrypt.checkpw(b"dummy", b"$2b$12$invalidhashfortimingprotectio.AAAAAAAAAAAAAAAAAAAAAA")
-        record_failed(ip)
-        return jsonify({"ok": False, "error": "Credenziali non valide"}), 401
-    stored_hash = os.environ.get("LOGIN_PASSWORD_HASH", "")
-    ok = False
-    if stored_hash:
-        try:
-            ok = bcrypt.checkpw(password.encode(), stored_hash.encode())
-        except Exception:
-            ok = False
-    else:
-        ok = (password == LOGIN_PASSWORD)
-    if not ok:
-        record_failed(ip)
-        return jsonify({"ok": False, "error": "Credenziali non valide"}), 401
-    clear_attempts(ip)
-    session["logged_in"] = True
-    session.permanent = True
-    return jsonify({"ok": True})
-
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login_page"))
 
-@app.route("/")
-@login_required
-def index():
-    return render_template("index.html")
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    ip = request.remote_addr or "unknown"
+    ok, remaining = check_rate_limit(ip)
+    if not ok:
+        return jsonify({"error": f"Troppi tentativi. Riprova tra {remaining} minuti."}), 429
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+    if username == LOGIN_USERNAME and password == LOGIN_PASSWORD:
+        clear_attempts(ip)
+        session.permanent = True
+        session["logged_in"] = True
+        session["username"] = username
+        return jsonify({"ok": True})
+    record_failed(ip)
+    return jsonify({"error": "Credenziali non valide"}), 401
 
-@app.route("/settings")
-@login_required
-def settings_page():
-    return render_template("settings.html")
-
-# ── Documenti ─────────────────────────────────────────────────────────────────
+# ── Documents API ─────────────────────────────────────────────────────────────
 
 @app.route("/api/documents", methods=["GET"])
 @login_required
@@ -343,11 +167,12 @@ def get_documents():
 def add_document():
     try:
         data = request.get_json()
+        folder = data.get("folder", "Generale") or "Generale"
         with get_db() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO documents (name, category, expiry_date, note) VALUES (%s,%s,%s,%s) RETURNING *",
-                    (data["name"], data.get("category", "Altro"), data["expiry_date"], data.get("note", "")),
+                    "INSERT INTO documents (name, category, folder, expiry_date, note) VALUES (%s,%s,%s,%s,%s) RETURNING *",
+                    (data["name"], data.get("category", "Altro"), folder, data["expiry_date"], data.get("note", "")),
                 )
                 doc = cur.fetchone()
                 conn.commit()
@@ -360,11 +185,12 @@ def add_document():
 def update_document(doc_id):
     try:
         data = request.get_json()
+        folder = data.get("folder", "Generale") or "Generale"
         with get_db() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE documents SET name=%s, category=%s, expiry_date=%s, note=%s WHERE id=%s RETURNING *",
-                    (data["name"], data.get("category"), data["expiry_date"], data.get("note", ""), doc_id),
+                    "UPDATE documents SET name=%s, category=%s, folder=%s, expiry_date=%s, note=%s WHERE id=%s RETURNING *",
+                    (data["name"], data.get("category"), folder, data["expiry_date"], data.get("note", ""), doc_id),
                 )
                 doc = cur.fetchone()
                 conn.commit()
@@ -391,7 +217,24 @@ def delete_document(doc_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ── Upload + Gemini ───────────────────────────────────────────────────────────
+# ── Folders API ───────────────────────────────────────────────────────────────
+
+@app.route("/api/folders", methods=["GET"])
+@login_required
+def get_folders():
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT folder FROM documents WHERE folder IS NOT NULL ORDER BY folder")
+                rows = cur.fetchall()
+        folders = [r["folder"] for r in rows if r["folder"]]
+        if "Generale" not in folders:
+            folders = ["Generale"] + folders
+        return jsonify(folders)
+    except Exception as e:
+        return jsonify(["Generale"])
+
+# ── Upload ────────────────────────────────────────────────────────────────────
 
 @app.route("/api/upload", methods=["POST"])
 @login_required
@@ -404,21 +247,12 @@ def upload_file():
     if not allowed_file(file.filename):
         return jsonify({"error": f"Tipo non supportato. Usa: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
 
-    ext = file.filename.rsplit(".", 1)[-1].lower()
     safe_name = secure_filename(file.filename)
     unique_name = f"{int(time.time())}_{secrets.token_hex(4)}_{safe_name}"
     file_path = os.path.join(UPLOAD_FOLDER, unique_name)
     file.save(file_path)
 
     result = {"ok": True, "file_path": unique_name, "original_name": file.filename}
-
-    analyze = request.form.get("analyze", "false").lower() == "true"
-    if analyze:
-        gemini_result = analyze_document_with_gemini(file_path, file.filename)
-        if "error" not in gemini_result:
-            result["gemini"] = gemini_result
-        else:
-            result["gemini_error"] = gemini_result["error"]
 
     doc_id = request.form.get("doc_id")
     if doc_id:
@@ -444,67 +278,23 @@ def upload_file():
 def serve_upload(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
-# ── Settings ──────────────────────────────────────────────────────────────────
-
-@app.route("/api/settings", methods=["GET"])
-@login_required
-def get_settings():
-    return jsonify({
-        "user_email": get_setting("user_email", ""),
-        "gemini_configured": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
-    })
-
-@app.route("/api/settings/email", methods=["POST"])
-@login_required
-def update_email():
-    try:
-        data = request.get_json()
-        email = data.get("email", "").strip()
-        if not email:
-            return jsonify({"error": "Email non valida"}), 400
-        set_setting("user_email", email)
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/test-email", methods=["POST"])
-@login_required
-def test_email():
-    try:
-        user_email = get_setting("user_email", "")
-        if not user_email:
-            return jsonify({"ok": False, "error": "Nessuna email configurata"}), 400
-        if not os.environ.get("SENDGRID_API_KEY", "").strip():
-            return jsonify({"ok": False, "error": "SENDGRID_API_KEY non configurata"}), 400
-        test_doc = {
-            "id": 0, "name": "Documento di prova KE Group",
-            "expiry_date": (datetime.now().date() + timedelta(days=30)).isoformat(),
-            "category": "Test", "note": "Email di test"
-        }
-        ok = send_reminder_email(test_doc, 30)
-        return jsonify({"ok": ok}) if ok else jsonify({"ok": False, "error": "Errore invio"}), 500
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-# ── Notifiche Electron ────────────────────────────────────────────────────────
+# ── Notifications ─────────────────────────────────────────────────────────────
 
 @app.route("/api/check-notifications", methods=["GET"])
 @login_required
 def check_notifications():
-    """Ritorna documenti in scadenza entro 30 giorni — usato da Electron per notifiche native."""
     ensure_db()
     try:
         with get_db() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT id, name, category, expiry_date, note
+                    SELECT id, name, category, folder, expiry_date, note
                     FROM documents
                     WHERE DATE(expiry_date) <= CURRENT_DATE + INTERVAL '30 days'
                     AND DATE(expiry_date) >= CURRENT_DATE
                     ORDER BY expiry_date ASC
                 """)
                 docs = [dict(r) for r in cur.fetchall()]
-
         results = []
         today = datetime.now().date()
         for d in docs:
@@ -515,6 +305,7 @@ def check_notifications():
                     "id": d["id"],
                     "name": d["name"],
                     "category": d.get("category", ""),
+                    "folder": d.get("folder", "Generale"),
                     "expiry_date": d["expiry_date"][:10],
                     "days_left": days_left,
                 })
@@ -532,7 +323,9 @@ def too_large(e):
 
 @app.errorhandler(404)
 def not_found(e):
-    return jsonify({"error": "Non trovato"}), 404
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Non trovato"}), 404
+    return redirect(url_for("index"))
 
 @app.errorhandler(500)
 def server_error(e):
@@ -540,4 +333,5 @@ def server_error(e):
     return jsonify({"error": "Errore interno del server"}), 500
 
 if __name__ == "__main__":
+    ensure_db()
     app.run(debug=False, port=int(os.environ.get("PORT", 5000)))
